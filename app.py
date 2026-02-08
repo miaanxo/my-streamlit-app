@@ -168,7 +168,7 @@ def load_state():
 def extract_json(text: str) -> dict:
     text = (text or "").strip()
     try:
-            return "
+            return ""
 ".join(parts)
 ".join(parts).join(parts)
 

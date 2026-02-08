@@ -20,7 +20,7 @@ MAX_DISCOVERY_TURNS = 4
 
 DISCOVERY_PROMPT = """
 너는 전문 진로 컨설턴트다. 현재 단계는 [대화 단계].
-목표: 관심사/강점/가치관/제약 파악.
+목표: 관심사/강점/가치관 파악.
 규칙: 질문/요약만, 해결책/계획 제시 금지, 질문 최대 3개.
 출력(JSON): assistant_message, discovery_summary, next_action
 """
@@ -183,50 +183,37 @@ def render_roadmap():
             if shown == 0:
                 st.caption("배치된 활동이 없어요.")
 
-
 def build_design_appendix(data: dict) -> str:
-    """DESIGN 단계에서 '제안(초안)'을 채팅창에 반드시 보여주기 위한 부록 텍스트."""
     parts = []
 
     options = data.get("career_options", [])
     if isinstance(options, list) and options:
-        parts.append("
-
----
-**초안(진로 옵션)**")
+        parts.append("\n\n---\n**초안(진로 옵션)**")
         for i, o in enumerate(options[:3], 1):
-            if not isinstance(o, dict):
-                continue
             title = o.get("title", "")
             fit = o.get("fit_reason", "")
             risk = o.get("risk", "")
             out = o.get("outlook", "")
             parts.append(
-                f"{i}. **{title}**
-"
-                f"- 적합: {fit}
-"
-                f"- 리스크: {risk}
-"
+                f"{i}. **{title}**\n"
+                f"- 적합: {fit}\n"
+                f"- 리스크: {risk}\n"
                 f"- 전망: {out}"
             )
 
     rec = (data.get("recommended_direction") or "").strip()
     if rec:
-        parts.append(f"
-**현재 유력 방향(초안):** {rec}")
+        parts.append(f"\n**현재 유력 방향(초안):** {rec}")
 
     drafts = normalize_activities(data.get("draft_activities", []))
     if drafts:
-        parts.append("
----
-**초안(필요활동 TOP 6)**")
+        parts.append("\n---\n**초안(필요활동 TOP 6)**")
         for a in drafts[:6]:
             parts.append(f"- {badge(a.get('priority','권장'))} **{a.get('title','')}**")
 
-    return "
-".join(parts)
-".join(parts)
+    return "\n".join(parts)
+
+
 
 # ======================
 # Main

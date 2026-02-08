@@ -223,23 +223,36 @@ def render_roadmap():
 
 
 def build_design_appendix(career_options, recommended_direction, draft_activities) -> str:
+    """DESIGN 단계 초안을 채팅에 안전하게 붙이기 (문자열 안전 버전)."""
     parts = []
-    if career_options:
+
+    if isinstance(career_options, list) and career_options:
         parts.append("
 
 ---
 **초안(진로 옵션)**")
-        for i,o in enumerate(career_options[:3],1):
-            parts.append(f"{i}. **{o.get('title','')}** - {o.get('fit_reason','')}")
+        for i, o in enumerate(career_options[:3], 1):
+            if not isinstance(o, dict):
+                continue
+            title = o.get('title', '')
+            fit = o.get('fit_reason', '')
+            parts.append(f"{i}. **{title}** - {fit}")
+
     if recommended_direction:
         parts.append(f"
 **유력 방향:** {recommended_direction}")
-    if draft_activities:
+
+    if isinstance(draft_activities, list) and draft_activities:
         parts.append("
 ---
 **초안(필요활동)**")
-        for a in draft_activities[:6]: parts.append(f"- {a.get('title','')}")
+        for a in draft_activities[:6]:
+            if not isinstance(a, dict):
+                continue
+            parts.append(f"- {a.get('title','')}")
+
     return "
+".join(parts)
 ".join(parts)
 (career_options, recommended_direction, draft_activities) -> str:
     parts = []

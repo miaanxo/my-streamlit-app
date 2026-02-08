@@ -410,7 +410,7 @@ def _render_timeline_header(years: list[int]):
     )
 
 
-def _resolve_activitydef _resolve_activity(act_map: dict, title_map: dict, key):
+def _resolve_activity(act_map: dict, title_map: dict, key):
     """로드맵 항목이 id가 아닐 수도 있어(모델 실수). id 또는 title로 복구."""
     if key in act_map:
         return act_map[key]

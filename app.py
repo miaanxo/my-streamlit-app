@@ -298,7 +298,7 @@ def _ensure_roadmap_css_once():
           .j-dot-core { width: 14px; height: 14px; border-radius: 999px; background: #111827; border: 3px solid #f9fafb; box-shadow: 0 1px 2px rgba(0,0,0,0.15); margin: 0 auto; }
           .j-year { margin-top: 6px; font-weight: 900; font-size: 13px; color: #111827; }
           .j-sub { margin-top: -10px; color: #6b7280; font-size: 13px; }
-          .j-dot-link { text-decoration: none; }
+          .j-dot-link { text-decoration: none; cursor: pointer; }
           .j-dot-link:hover .j-dot-core { transform: scale(1.06); }
 
           /* Cards */
@@ -330,7 +330,7 @@ def _render_timeline_header(years: list[int]):
     markers = "".join(
         [
             (
-                f"<a class='j-dot-link' href='#year-{y}'>"
+                f"<a class='j-dot-link' href='#' onclick=\"parent.location.hash='year-{y}'; return false;\">"
                 f"<div class='j-dot' style='left:{p}%;'>"
                 f"<div class='j-dot-core'></div><div class='j-year'>{y}</div>"
                 f"</div></a>"
@@ -690,7 +690,10 @@ def main():
                         final_data = llm_call(client, FINAL_PROMPT, st.session_state.messages)
                         final_msg = (final_data.get("assistant_message") or "").strip()
                         final_msg = (final_data.get("assistant_message") or "").strip()
-                        final_msg = final_msg + "\n\n---\n[완료] 필요활동과 로드맵을 업데이트했어요. 위 탭에서 바로 확인할 수 있어요."
+                        final_msg = final_msg + "
+
+---
+[완료] 필요활동과 로드맵을 업데이트했어요. 위 탭에서 바로 확인할 수 있어요."
                         st.session_state.messages.append({"role": "assistant", "content": final_msg})
 
                         st.session_state.career_plan = final_data.get("career_plan", st.session_state.career_plan)

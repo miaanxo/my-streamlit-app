@@ -227,8 +227,7 @@ def build_design_appendix(career_options, recommended_direction, draft_activitie
     parts = []
 
     if isinstance(career_options, list) and career_options:
-        parts.append("
-
+        
 ---
 **초안(진로 옵션)**")
         for i, o in enumerate(career_options[:3], 1):
@@ -243,8 +242,7 @@ def build_design_appendix(career_options, recommended_direction, draft_activitie
 **유력 방향:** {recommended_direction}")
 
     if isinstance(draft_activities, list) and draft_activities:
-        parts.append("
----
+        ---
 **초안(필요활동)**")
         for a in draft_activities[:6]:
             if not isinstance(a, dict):
@@ -257,8 +255,7 @@ def build_design_appendix(career_options, recommended_direction, draft_activitie
 (career_options, recommended_direction, draft_activities) -> str:
     parts = []
     if career_options:
-        parts.append("
-
+        
 ---
 **초안(진로 옵션)**")
         for i,o in enumerate(career_options[:3],1):
@@ -267,8 +264,7 @@ def build_design_appendix(career_options, recommended_direction, draft_activitie
         parts.append(f"
 **유력 방향:** {recommended_direction}")
     if draft_activities:
-        parts.append("
----
+        ---
 **초안(필요활동)**")
         for a in draft_activities[:6]: parts.append(f"- {a.get('title','')}")
     return "

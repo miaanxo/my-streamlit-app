@@ -253,9 +253,56 @@ def init_state():
 def badge(priority: str) -> str:
     meta = PRIORITY_BADGE.get(priority, PRIORITY_BADGE["권장"])
     return (
-        f"<span style='background:{meta['color']};color:white;"
-        "padding:3px 10px;border-radius:999px;font-size:12px;font-weight:800'>"
+        f"<span style='background:{meta['color']};color:white;'"
+        " style='padding:3px 10px;border-radius:999px;font-size:12px;font-weight:800'>"
         f"{meta['label']}</span>"
+    )
+
+
+def _priority_rank(priority: str) -> int:
+    # 핵심(0) -> 권장(1) -> 선택(2)
+    if priority == "핵심":
+        return 0
+    if priority == "권장":
+        return 1
+    if priority == "선택":
+        return 2
+    return 9
+
+
+def _chip_html(title: str, priority: str) -> str:
+    meta = PRIORITY_BADGE.get(priority, PRIORITY_BADGE["권장"])
+    # 칩: 연한 배경 + 컬러 도트 + 제목
+    return (
+        "<span class='j-chip'>"
+        f"<span class='j-chip-dot' style='background:{meta['color']};'></span>"
+        f"<span class='j-chip-text'>{title}</span>"
+        "</span>"
+    )
+
+
+def _ensure_roadmap_css_once():
+    if st.session_state.get("_roadmap_css_loaded"):
+        return
+    st.session_state["_roadmap_css_loaded"] = True
+    st.markdown(
+        """
+        <style>
+          .j-tl { position: relative; height: 54px; margin: 8px 0 16px 0; }
+          .j-line { position: absolute; top: 22px; left: 0; right: 0; height: 8px; background: #e5e7eb; border-radius: 999px; }
+          .j-dot { position: absolute; top: 12px; transform: translateX(-50%); text-align: center; }
+          .j-dot-core { width: 14px; height: 14px; border-radius: 999px; background: #111827; border: 3px solid #f9fafb; box-shadow: 0 1px 2px rgba(0,0,0,0.15); margin: 0 auto; }
+          .j-year { margin-top: 6px; font-weight: 900; font-size: 13px; color: #111827; }
+          .j-sub { margin-top: -6px; color: #6b7280; font-size: 13px; }
+          .j-dot-link { text-decoration: none; }
+          .j-dot-link:hover .j-dot-core { transform: scale(1.05); }
+          .j-chip-wrap { display: flex; flex-wrap: wrap; gap: 8px; margin: 6px 0 2px 0; }
+          .j-chip { display: inline-flex; align-items: center; gap: 8px; padding: 8px 10px; border-radius: 999px; background: #f3f4f6; border: 1px solid #e5e7eb; }
+          .j-chip-dot { width: 10px; height: 10px; border-radius: 999px; display: inline-block; }
+          .j-chip-text { font-size: 13px; font-weight: 700; color: #111827; }
+        </style>
+        """,
+        unsafe_allow_html=True,
     )
 
 
@@ -327,59 +374,50 @@ def render_activities_table():
 
 
 def _render_timeline_header(years: list[int]):
-    """오류가 나지 않도록 단순/견고한 타임라인 헤더 (긴 가로선 + 연도 점)"""
+    """단일 블록 타임라인(긴 가로선 + 연도 점). 연도 점 클릭 시 해당 연도 카드로 스크롤."""
     years = [y for y in years if isinstance(y, int)]
     years = sorted(list(dict.fromkeys(years)))
     if not years:
         return
 
-    # 마커를 %로 배치 (연도 개수에 따라 균등)
-    positions = []
+    _ensure_roadmap_css_once()
+
     n = len(years)
-    if n == 1:
-        positions = [50]
-    else:
-        for i in range(n):
-            positions.append(int((i / (n - 1)) * 100))
+    positions = [50] if n == 1 else [int((i / (n - 1)) * 100) for i in range(n)]
 
-    markers = []
-    for y, p in zip(years, positions):
-        markers.append(
-            f"""
-            <div class='j-dot' style='left:{p}%;'>
-              <div class='j-dot-core'></div>
-              <div class='j-year'>{y}</div>
-            </div>
-            """
-        )
-
-    st.markdown(
-        """
-        <style>
-          .j-tl { position: relative; height: 54px; margin: 8px 0 16px 0; }
-          .j-line { position: absolute; top: 22px; left: 0; right: 0; height: 8px; background: #e5e7eb; border-radius: 999px; }
-          .j-dot { position: absolute; top: 12px; transform: translateX(-50%); text-align: center; }
-          .j-dot-core { width: 14px; height: 14px; border-radius: 999px; background: #111827; border: 3px solid #f9fafb; box-shadow: 0 1px 2px rgba(0,0,0,0.15); margin: 0 auto; }
-          .j-year { margin-top: 6px; font-weight: 900; font-size: 13px; color: #111827; }
-          .j-sub { margin-top: -6px; color: #6b7280; font-size: 13px; }
-        </style>
-        """,
-        unsafe_allow_html=True,
+    # 클릭하면 #year-YYYY 앵커로 이동
+    markers = "".join(
+        [
+            (
+                f"<a class='j-dot-link' href='#year-{y}'>"
+                f"<div class='j-dot' style='left:{p}%;'>"
+                f"<div class='j-dot-core'></div><div class='j-year'>{y}</div>"
+                f"</div></a>"
+            )
+            for y, p in zip(years, positions)
+        ]
     )
 
     st.markdown(
         f"""
         <div class='j-tl'>
           <div class='j-line'></div>
-          {''.join(markers)}
+          {markers}
         </div>
-        <div class='j-sub'>연도별로 상반기/하반기를 펼쳐서 활동을 확인해요.</div>
+        <div class='j-sub'>연도 점을 누르면 해당 연도로 이동해요. 아래에서 상반기/하반기를 펼쳐 활동을 확인할 수 있어요.</div>
         """,
         unsafe_allow_html=True,
     )
 
 
 def _resolve_activity(act_map: dict, title_map: dict, key):
+    """로드맵 항목이 id가 아닐 수도 있어(모델 실수). id 또는 title로 복구."""
+    if key in act_map:
+        return act_map[key]
+    if isinstance(key, str) and key in title_map:
+        return title_map[key]
+    return None
+(act_map: dict, title_map: dict, key):
     """로드맵 항목이 id가 아닐 수도 있어(모델 실수). id 또는 title로 복구."""
     if key in act_map:
         return act_map[key]
@@ -394,6 +432,8 @@ def render_roadmap():
     if not roadmap:
         st.info("아직 로드맵이 없습니다. FINAL 단계에서 생성돼요.")
         return
+
+    _ensure_roadmap_css_once()
 
     # 활동 맵 구성
     act_map = {}
@@ -418,6 +458,9 @@ def render_roadmap():
         if not isinstance(year, int):
             continue
 
+        # 앵커(연도 점 클릭 시 이동)
+        st.markdown(f"<div id='year-{year}'></div>", unsafe_allow_html=True)
+
         st.markdown(
             "<div style='padding:14px 14px 10px 14px; border:1px solid #e5e7eb; border-radius:16px; margin: 12px 0; background:#ffffff;'>",
             unsafe_allow_html=True,
@@ -435,36 +478,43 @@ def render_roadmap():
         if c2.button("하반기(7~12월) 보기/접기", key=f"btn_{k2}"):
             st.session_state.roadmap_open[k2] = not st.session_state.roadmap_open[k2]
 
-        # 상반기
-        if st.session_state.roadmap_open[k1]:
-            st.markdown("#### 상반기")
-            items = r.get("h1") or []
+        def _render_half(label: str, items, open_flag: bool):
+            if not open_flag:
+                return
+            st.markdown(f"#### {label}")
             if not items:
                 st.caption("배치된 활동이 없어요.")
-            else:
-                for key in items:
-                    a = _resolve_activity(act_map, title_map, key)
-                    if not a:
-                        continue
-                    st.markdown(f"- {badge(a.get('priority','권장'))} <b>{a.get('title','')}</b>", unsafe_allow_html=True)
+                return
 
-        # 하반기
-        if st.session_state.roadmap_open[k2]:
-            st.markdown("#### 하반기")
-            items = r.get("h2") or []
-            if not items:
-                st.caption("배치된 활동이 없어요.")
-            else:
-                for key in items:
-                    a = _resolve_activity(act_map, title_map, key)
-                    if not a:
-                        continue
-                    st.markdown(f"- {badge(a.get('priority','권장'))} <b>{a.get('title','')}</b>", unsafe_allow_html=True)
+            resolved = []
+            for key in items:
+                a = _resolve_activity(act_map, title_map, key)
+                if not a:
+                    continue
+                resolved.append(a)
+
+            if not resolved:
+                st.caption("표시할 활동을 찾지 못했어요.")
+                return
+
+            # 우선순위 정렬(핵심→권장→선택) + 제목
+            resolved.sort(key=lambda x: (_priority_rank((x.get("priority") or "권장").strip()), (x.get("title") or "")))
+
+            chips = "".join([
+                _chip_html((a.get("title") or "").strip(), (a.get("priority") or "권장").strip())
+                for a in resolved
+            ])
+            st.markdown(f"<div class='j-chip-wrap'>{chips}</div>", unsafe_allow_html=True)
+
+        # 상/하반기 칩 렌더
+        _render_half("상반기", r.get("h1") or [], st.session_state.roadmap_open[k1])
+        _render_half("하반기", r.get("h2") or [], st.session_state.roadmap_open[k2])
 
         st.markdown("</div>", unsafe_allow_html=True)
 
 
-def _build_design_chat_appendix(career_options, recommended_direction, draft_activities) -> str:
+
+def _build_design_chat_append(career_options, recommended_direction, draft_activities) -> str:
     parts = []
 
     if isinstance(career_options, list) and career_options:
@@ -504,7 +554,7 @@ def main():
     with st.sidebar:
         api_key = st.text_input("OpenAI API Key", type="password")
         st.markdown(f"**현재 단계:** {st.session_state.stage}")
-        st.caption(f"Discovery 자동 전환: 유저 발화 {MAX_DISCOVERY_TURNS}회 이후 설계로")
+        
         if st.button("전체 초기화"):
             st.session_state.clear()
             if DATA_PATH.exists():

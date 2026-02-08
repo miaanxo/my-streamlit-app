@@ -509,6 +509,73 @@ def _build_design_chat_appendix(career_options, recommended_direction, draft_act
 # Main
 # ======================
 
+def render_activities_table():
+    """필요활동: 체크박스-제목-내용-관련링크-메모 (표 형태)"""
+    st.subheader("필요활동")
+    acts = normalize_activities(st.session_state.get("activities", []))
+    if not acts:
+        st.info("아직 활동이 없습니다. 채팅에서 설계/확정을 진행해 주세요.")
+        return
+
+    # 헤더
+    header = st.columns([0.7, 2.2, 4.5, 2.2, 3.2])
+    header[0].markdown("**완료**")
+    header[1].markdown("**제목**")
+    header[2].markdown("**내용**")
+    header[3].markdown("**관련 링크**")
+    header[4].markdown("**메모**")
+    st.markdown("---")
+
+    st.session_state.setdefault("activity_status", {})
+
+    for a in acts:
+        aid = a.get("id") or str(uuid.uuid4())
+        a["id"] = aid
+        st.session_state.activity_status.setdefault(aid, {"done": False, "memo": ""})
+
+        row = st.columns([0.7, 2.2, 4.5, 2.2, 3.2], vertical_alignment="top")
+
+        # 체크
+        st.session_state.activity_status[aid]["done"] = row[0].checkbox(
+            label="",
+            value=st.session_state.activity_status[aid]["done"],
+            key=f"done_{aid}",
+        )
+
+        # 제목 + 중요도
+        title = (a.get("title") or "").strip()
+        priority = (a.get("priority") or "권장").strip()
+        row[1].markdown(f"**{title}**<br>{badge(priority)}", unsafe_allow_html=True)
+
+        # 내용
+        row[2].write((a.get("description") or "").strip())
+
+        # 링크
+        links = a.get("links") or []
+        shown = 0
+        if isinstance(links, list):
+            for l in links:
+                if isinstance(l, str) and l.startswith("http"):
+                    shown += 1
+                    row[3].link_button(f"열기 {shown}", l)
+                    if shown >= 3:
+                        break
+        if shown == 0:
+            row[3].caption("—")
+
+        # 메모
+        st.session_state.activity_status[aid]["memo"] = row[4].text_area(
+            label="",
+            value=st.session_state.activity_status[aid]["memo"],
+            key=f"memo_{aid}",
+            height=80,
+            placeholder="예) 마감/진행상황/참고 링크",
+        )
+
+        st.markdown("---")
+
+
+
 def main():
     st.set_page_config(APP_TITLE, "🧭", layout="wide")
     load_state()

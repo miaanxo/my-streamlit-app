@@ -253,8 +253,8 @@ def init_state():
 def badge(priority: str) -> str:
     meta = PRIORITY_BADGE.get(priority, PRIORITY_BADGE["권장"])
     return (
-        f"<span style='background:{meta['color']};color:white;'"
-        " style='padding:3px 10px;border-radius:999px;font-size:12px;font-weight:800'>"
+        f"<span style='background:{meta['color']};color:white;"
+        "padding:3px 10px;border-radius:999px;font-size:12px;font-weight:800'>"
         f"{meta['label']}</span>"
     )
 
@@ -282,99 +282,42 @@ def _chip_html(title: str, priority: str) -> str:
 
 
 def _ensure_roadmap_css_once():
+    """로드맵/타임라인/칩 UI에 필요한 CSS를 1회만 로드."""
     if st.session_state.get("_roadmap_css_loaded"):
         return
     st.session_state["_roadmap_css_loaded"] = True
+
     st.markdown(
         """
         <style>
-          .j-tl { position: relative; height: 54px; margin: 8px 0 16px 0; }
+          /* Timeline */
+          .j-tl { position: relative; height: 54px; margin: 10px 0 18px 0; }
           .j-line { position: absolute; top: 22px; left: 0; right: 0; height: 8px; background: #e5e7eb; border-radius: 999px; }
           .j-dot { position: absolute; top: 12px; transform: translateX(-50%); text-align: center; }
           .j-dot-core { width: 14px; height: 14px; border-radius: 999px; background: #111827; border: 3px solid #f9fafb; box-shadow: 0 1px 2px rgba(0,0,0,0.15); margin: 0 auto; }
           .j-year { margin-top: 6px; font-weight: 900; font-size: 13px; color: #111827; }
-          .j-sub { margin-top: -6px; color: #6b7280; font-size: 13px; }
+          .j-sub { margin-top: -10px; color: #6b7280; font-size: 13px; }
           .j-dot-link { text-decoration: none; }
-          .j-dot-link:hover .j-dot-core { transform: scale(1.05); }
+          .j-dot-link:hover .j-dot-core { transform: scale(1.06); }
+
+          /* Cards */
+          .j-year-card { padding: 14px 14px 10px 14px; border: 1px solid #e5e7eb; border-radius: 16px; margin: 12px 0; background: #ffffff; }
+
+          /* Chips */
           .j-chip-wrap { display: flex; flex-wrap: wrap; gap: 8px; margin: 6px 0 2px 0; }
           .j-chip { display: inline-flex; align-items: center; gap: 8px; padding: 8px 10px; border-radius: 999px; background: #f3f4f6; border: 1px solid #e5e7eb; }
           .j-chip-dot { width: 10px; height: 10px; border-radius: 999px; display: inline-block; }
           .j-chip-text { font-size: 13px; font-weight: 700; color: #111827; }
+          .j-top-title { font-size: 12px; font-weight: 900; color: #111827; margin: 6px 0 6px 0; }
+          .j-chip-top { background: #fff7ed; border: 1px solid #fed7aa; }
         </style>
         """,
         unsafe_allow_html=True,
     )
 
 
-def render_activities_table():
-    st.subheader("필요활동")
-    acts = st.session_state.activities
-    if not acts:
-        st.info("아직 활동이 없습니다. 채팅에서 설계/확정을 진행해 주세요.")
-        return
-
-    header = st.columns([0.7, 2.2, 4.5, 2.2, 3.2])
-    header[0].markdown("**완료**")
-    header[1].markdown("**제목**")
-    header[2].markdown("**내용**")
-    header[3].markdown("**관련 링크**")
-    header[4].markdown("**메모**")
-
-    st.markdown("---")
-
-    for a in acts:
-        if not isinstance(a, dict):
-            continue
-        aid = a.get("id") or str(uuid.uuid4())
-        a["id"] = aid
-        st.session_state.activity_status.setdefault(aid, {"done": False, "memo": ""})
-
-        row = st.columns([0.7, 2.2, 4.5, 2.2, 3.2], vertical_alignment="top")
-
-        # 체크박스
-        st.session_state.activity_status[aid]["done"] = row[0].checkbox(
-            label="",
-            value=st.session_state.activity_status[aid]["done"],
-            key=f"done_{aid}",
-        )
-
-        # 제목 + 중요도
-        title = (a.get("title") or "").strip()
-        priority = (a.get("priority") or "권장").strip()
-        row[1].markdown(f"**{title}**<br>{badge(priority)}", unsafe_allow_html=True)
-
-        # 내용
-        row[2].write((a.get("description") or "").strip())
-
-        # 링크
-        links = a.get("links") or []
-        if isinstance(links, list) and links:
-            shown = 0
-            for l in links:
-                if isinstance(l, str) and l.startswith("http"):
-                    shown += 1
-                    row[3].link_button(f"열기 {shown}", l)
-                    if shown >= 3:
-                        break
-            if shown == 0:
-                row[3].caption("—")
-        else:
-            row[3].caption("—")
-
-        # 메모
-        st.session_state.activity_status[aid]["memo"] = row[4].text_area(
-            label="",
-            value=st.session_state.activity_status[aid]["memo"],
-            key=f"memo_{aid}",
-            height=80,
-            placeholder="예) 마감/진행상황/참고 링크",
-        )
-
-        st.markdown("---")
-
-
 def _render_timeline_header(years: list[int]):
-    """단일 블록 타임라인(긴 가로선 + 연도 점). 연도 점 클릭 시 해당 연도 카드로 스크롤."""
+    """긴 가로선(타임라인) + 연도 점. 연도 점 클릭 시 해당 연도 카드로 스크롤."""
     years = [y for y in years if isinstance(y, int)]
     years = sorted(list(dict.fromkeys(years)))
     if not years:
@@ -385,7 +328,6 @@ def _render_timeline_header(years: list[int]):
     n = len(years)
     positions = [50] if n == 1 else [int((i / (n - 1)) * 100) for i in range(n)]
 
-    # 클릭하면 #year-YYYY 앵커로 이동
     markers = "".join(
         [
             (
@@ -404,7 +346,7 @@ def _render_timeline_header(years: list[int]):
           <div class='j-line'></div>
           {markers}
         </div>
-        <div class='j-sub'>연도 점을 누르면 해당 연도로 이동해요. 아래에서 상반기/하반기를 펼쳐 활동을 확인할 수 있어요.</div>
+        <div class='j-sub'>연도 점을 누르면 해당 연도로 이동해요. 아래에서 상/하반기 계획을 확인할 수 있어요.</div>
         """,
         unsafe_allow_html=True,
     )
@@ -414,107 +356,130 @@ def _resolve_activity(act_map: dict, title_map: dict, key):
     """로드맵 항목이 id가 아닐 수도 있어(모델 실수). id 또는 title로 복구."""
     if key in act_map:
         return act_map[key]
-    if isinstance(key, str) and key in title_map:
-        return title_map[key]
+    if isinstance(key, str):
+        k = key.strip()
+        if k in title_map:
+            return title_map[k]
     return None
 
-    """로드맵 항목이 id가 아닐 수도 있어(모델 실수). id 또는 title로 복구."""
-    if key in act_map:
-        return act_map[key]
-    if isinstance(key, str) and key in title_map:
-        return title_map[key]
-    return None
+
+def _chip_html(title: str, priority: str) -> str:
+    meta = PRIORITY_BADGE.get(priority, PRIORITY_BADGE["권장"])
+    safe_title = (title or "").strip()
+    return (
+        "<span class='j-chip'>"
+        f"<span class='j-chip-dot' style='background:{meta['color']};'></span>"
+        f"<span class='j-chip-text'>{safe_title}</span>"
+        "</span>"
+    )
 
 
 def render_roadmap():
+    """보기 전용 로드맵: 타임라인 + 연도 카드 + 상/하반기 2열 보드 + Top3 강조 + 칩 + 자동정렬."""
     st.subheader("로드맵")
-    roadmap = st.session_state.roadmap
+
+    roadmap = normalize_roadmap(st.session_state.roadmap)
     if not roadmap:
         st.info("아직 로드맵이 없습니다. FINAL 단계에서 생성돼요.")
         return
 
     _ensure_roadmap_css_once()
 
-    # 활동 맵 구성
-    act_map = {}
-    title_map = {}
-    for a in st.session_state.activities:
-        if isinstance(a, dict) and a.get("id"):
-            act_map[a["id"]] = a
-            t = (a.get("title") or "").strip()
-            if t:
-                title_map[t] = a
+    activities = normalize_activities(st.session_state.activities)
 
-    # 연도 헤더
-    years = []
-    for r in roadmap:
-        if isinstance(r, dict) and isinstance(r.get("year"), int):
-            years.append(r["year"])
+    # 활동 맵 (id/title)
+    act_map = {a["id"]: a for a in activities if isinstance(a, dict) and a.get("id")}
+    title_map = {}
+    for a in activities:
+        if not isinstance(a, dict):
+            continue
+        t = (a.get("title") or "").strip()
+        if t:
+            title_map[t] = a
+
+    # 타임라인
+    years = [r.get("year") for r in roadmap if isinstance(r, dict) and isinstance(r.get("year"), int)]
     _render_timeline_header(years)
 
-    # 연도별 카드
-    for r in sorted([x for x in roadmap if isinstance(x, dict)], key=lambda x: x.get("year", 0)):
+    def _resolve_many(items):
+        resolved = []
+        for key in (items or []):
+            a = _resolve_activity(act_map, title_map, key)
+            if a:
+                resolved.append(a)
+        # 우선순위(핵심→권장→선택) + 제목
+        resolved.sort(
+            key=lambda x: (
+                _priority_rank((x.get("priority") or "권장").strip()),
+                (x.get("title") or ""),
+            )
+        )
+        return resolved
+
+    def _chips(resolved, top=False):
+        if not resolved:
+            return ""
+        chips = []
+        for a in resolved:
+            title = (a.get("title") or "").strip()
+            priority = (a.get("priority") or "권장").strip()
+            chip = _chip_html(title, priority)
+            if top:
+                chip = chip.replace("class='j-chip'", "class='j-chip j-chip-top'")
+            chips.append(chip)
+        return "".join(chips)
+
+    # 연도 카드 렌더
+    for r in sorted(roadmap, key=lambda x: x.get("year", 0)):
         year = r.get("year")
         if not isinstance(year, int):
             continue
 
-        # 앵커(연도 점 클릭 시 이동)
+        # 앵커(타임라인 클릭 스크롤)
         st.markdown(f"<div id='year-{year}'></div>", unsafe_allow_html=True)
 
-        st.markdown(
-            "<div style='padding:14px 14px 10px 14px; border:1px solid #e5e7eb; border-radius:16px; margin: 12px 0; background:#ffffff;'>",
-            unsafe_allow_html=True,
-        )
+        st.markdown("<div class='j-year-card'>", unsafe_allow_html=True)
         st.markdown(f"### {year}년")
 
-        c1, c2 = st.columns(2)
-        k1 = f"{year}-h1"
-        k2 = f"{year}-h2"
-        st.session_state.roadmap_open.setdefault(k1, False)
-        st.session_state.roadmap_open.setdefault(k2, False)
+        h1_resolved = _resolve_many(r.get("h1"))
+        h2_resolved = _resolve_many(r.get("h2"))
 
-        if c1.button("상반기(1~6월) 보기/접기", key=f"btn_{k1}"):
-            st.session_state.roadmap_open[k1] = not st.session_state.roadmap_open[k1]
-        if c2.button("하반기(7~12월) 보기/접기", key=f"btn_{k2}"):
-            st.session_state.roadmap_open[k2] = not st.session_state.roadmap_open[k2]
+        col1, col2 = st.columns(2)
 
-        def _render_half(label: str, items, open_flag: bool):
-            if not open_flag:
-                return
-            st.markdown(f"#### {label}")
-            if not items:
-                st.caption("배치된 활동이 없어요.")
-                return
+        def _render_half(col, label, resolved):
+            with col:
+                st.markdown(f"#### {label}")
+                if not resolved:
+                    st.caption("배치된 활동이 없어요.")
+                    return
 
-            resolved = []
-            for key in items:
-                a = _resolve_activity(act_map, title_map, key)
-                if not a:
-                    continue
-                resolved.append(a)
+                # Top 3 (핵심 우선, 부족하면 전체에서 보충)
+                top = [a for a in resolved if (a.get("priority") or "").strip() == "핵심"]
+                if len(top) < 3:
+                    for a in resolved:
+                        if a not in top:
+                            top.append(a)
+                        if len(top) >= 3:
+                            break
+                top = top[:3]
 
-            if not resolved:
-                st.caption("표시할 활동을 찾지 못했어요.")
-                return
+                st.markdown("<div class='j-top-title'>이번 반기 Top 3</div>", unsafe_allow_html=True)
+                for a in top:
+                    st.markdown(f"- {badge(a.get('priority','권장'))} **{a.get('title','')}**", unsafe_allow_html=True)
 
-            # 우선순위 정렬(핵심→권장→선택) + 제목
-            resolved.sort(key=lambda x: (_priority_rank((x.get("priority") or "권장").strip()), (x.get("title") or "")))
+                st.markdown("<div class='j-top-title'>전체 활동</div>", unsafe_allow_html=True)
+                for a in resolved:
+                    st.markdown(f"- {badge(a.get('priority','권장'))} {a.get('title','')}", unsafe_allow_html=True)
 
-            chips = "".join([
-                _chip_html((a.get("title") or "").strip(), (a.get("priority") or "권장").strip())
-                for a in resolved
-            ])
-            st.markdown(f"<div class='j-chip-wrap'>{chips}</div>", unsafe_allow_html=True)
 
-        # 상/하반기 칩 렌더
-        _render_half("상반기", r.get("h1") or [], st.session_state.roadmap_open[k1])
-        _render_half("하반기", r.get("h2") or [], st.session_state.roadmap_open[k2])
+        _render_half(col1, "상반기(1~6월)", h1_resolved)
+        _render_half(col2, "하반기(7~12월)", h2_resolved)
 
         st.markdown("</div>", unsafe_allow_html=True)
 
 
 
-def _build_design_chat_append(career_options, recommended_direction, draft_activities) -> str:
+def _build_design_chat_appendix(career_options, recommended_direction, draft_activities) -> str:
     parts = []
 
     if isinstance(career_options, list) and career_options:

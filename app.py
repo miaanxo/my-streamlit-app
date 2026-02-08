@@ -417,7 +417,7 @@ def _resolve_activity(act_map: dict, title_map: dict, key):
     if isinstance(key, str) and key in title_map:
         return title_map[key]
     return None
-(act_map: dict, title_map: dict, key):
+
     """로드맵 항목이 id가 아닐 수도 있어(모델 실수). id 또는 title로 복구."""
     if key in act_map:
         return act_map[key]

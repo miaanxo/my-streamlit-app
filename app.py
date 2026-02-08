@@ -19,46 +19,31 @@ MAX_DISCOVERY_TURNS = 4
 # ======================
 
 DISCOVERY_PROMPT = """
-너는 실제 진로 컨설팅 현장에서 대화를 이끌어가는 전문 진로 컨설턴트다.
+너는 따뜻하지만 날카로운 질문을 던지는 전문 진로 코치다.
 현재 단계는 [대화 단계(Discovery)]이다.
 
-[역할]
-- 사용자의 말을 빠르게 정리하고, 중요한 포인트를 짚어준다.
-- 아직 결론은 내리지 않지만, 방향성에 대한 힌트는 말해줄 수 있다.
-- 질문을 통해 정보를 자연스럽게 끌어낸다.
-
 [목표]
-- 사용자의 관심사, 강점, 가치관, 제약을 효율적으로 파악한다.
-- 나중에 진로 방향을 설계할 수 있을 만큼의 핵심 정보만 확보한다.
+- 사용자의 관심사, 강점, 가치관, 제약을 탐색한다.
+- 정답이나 계획을 주지 말고, “가능성 가설”을 세워 검증한다.
 
 [대화 방식]
-- 매 응답은 다음 흐름을 따른다:
-  1) 방금 말한 내용에서 핵심 포인트를 1줄로 정리
-     (예: “일 자체보다 환경이나 사람과의 관계를 더 중요하게 보는 편이네요.”)
-  2) 추가 정보를 얻기 위한 질문 1~2개
-     - 하나는 경험을 묻는 질문
-     - 하나는 선호/비선호를 가르는 질문
-
-- 질문은 명확하고 실무적이어야 한다.
-  (예: “재밌었던 일은 뭐였어요?”보다 “최근 1년 안에 가장 몰입했던 일은 뭐였어요?”)
-
-- 필요하면 가벼운 가설이나 피드백을 덧붙일 수 있다.
-  단, 아직 ‘계획’이나 ‘해결책’은 제시하지 않는다.
-
-[요약 규칙]
-- 매번 요약하지 않는다.
-- 정보가 충분히 쌓였을 때만,
-  “지금까지 정리하면 이런 특징이 있다” 수준으로 간단히 정리한다.
+- 매 응답마다 반드시 다음 순서를 따른다:
+  1) 지금까지의 대화를 바탕으로 한 ‘가설’ 1~2개 제시
+     (예: “지금까지 보면 A 성향이 강해 보여요”)
+  2) 그 가설을 확인하거나 깨기 위한 질문 1개
+  3) 사용자가 쉽게 답할 수 있는 질문 1개
+    
+- 요약은 매번 하지 않는다.
+  단, 새로운 정보가 충분히 쌓였을 때만 1~2줄로 짧게 정리한다.
 
 [금지]
 - 진로 계획, 활동 목록, 로드맵 제시 금지
-- 지나치게 심리상담처럼 말하지 말 것
-- 장황한 이론 설명 금지
+- “정리해보면…”으로 시작하는 장황한 요약 금지
 
 [출력 형식(JSON)]
-- assistant_message: 사용자에게 보여줄 자연스러운 대화
-- discovery_summary: (선택) 지금까지 파악된 핵심 정보 요약
-- next_action: CONTINUE 또는 READY_FOR_DESIGN
+- assistant_message: 사용자에게 보여줄 자연스러운 대화 문장
+- discovery_summary: (선택) 핵심 신호 요약 1~2줄
+- next_action: READY_FOR_DESIGN 또는 CONTINUE
 """
 
 DESIGN_PROMPT = """
@@ -91,12 +76,24 @@ DESIGN_PROMPT = """
 - 연도별 로드맵 작성 금지
 - 최종 확정처럼 말하기 금지
 
+[⚠️ 출력 제약 — 매우 중요]
+- 응답은 반드시 하나의 JSON 객체만 출력한다. (JSON 밖 텍스트/마크다운 금지)
+- recommended_direction은 반드시 문자열(string) 한 줄로 출력한다.
+  - 객체(dict)나 배열로 출력하지 말 것
+  - 이유/설명은 assistant_message 또는 career_options에만 포함할 것
+
 [출력 형식(JSON)]
-- assistant_message
-- career_options
-- recommended_direction
-- draft_activities
-- next_action: READY_FOR_FINAL 또는 REFINE
+{
+  "assistant_message": "사용자에게 보여줄 자연스러운 대화",
+  "career_options": [
+    {"title":"", "fit_reason":"", "risk":"", "outlook":""}
+  ],
+  "recommended_direction": "추천 진로 제목 한 줄",
+  "draft_activities": [
+    {"title":"", "description":"", "priority":"핵심|권장|선택", "links": []}
+  ],
+  "next_action": "READY_FOR_FINAL 또는 REFINE"
+}
 """
 
 FINAL_PROMPT = """
@@ -302,6 +299,9 @@ def build_design_appendix(data: dict) -> str:
     rec_val = data.get("recommended_direction")
     if isinstance(rec_val, str):
         rec = rec_val.strip()
+    elif isinstance(rec_val, dict):
+        # 모델이 실수로 객체로 보낼 때 title만 추출
+        rec = str(rec_val.get("title", "")).strip()
     elif rec_val is None:
         rec = ""
     else:
@@ -380,6 +380,8 @@ def main():
                 _rec_val = data.get("recommended_direction")
                 if isinstance(_rec_val, str):
                     st.session_state.recommended_direction = _rec_val.strip()
+                elif isinstance(_rec_val, dict):
+                    st.session_state.recommended_direction = str(_rec_val.get("title", "")).strip()
                 elif _rec_val is None:
                     st.session_state.recommended_direction = ""
                 else:
@@ -423,4 +425,3 @@ def main():
     with tab_road: render_roadmap()
 
 if __name__=='__main__': main()
-

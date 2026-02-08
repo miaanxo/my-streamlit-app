@@ -201,7 +201,13 @@ def build_design_appendix(data: dict) -> str:
                 f"- 전망: {out}"
             )
 
-    rec = (data.get("recommended_direction") or "").strip()
+    rec_val = data.get("recommended_direction")
+    if isinstance(rec_val, str):
+        rec = rec_val.strip()
+    elif rec_val is None:
+        rec = ""
+    else:
+        rec = str(rec_val).strip()
     if rec:
         parts.append(f"\n**현재 유력 방향(초안):** {rec}")
 

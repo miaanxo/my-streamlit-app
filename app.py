@@ -188,7 +188,7 @@ def build_design_appendix(data: dict) -> str:
     """DESIGN 단계에서 '제안(초안)'을 채팅창에 반드시 보여주기 위한 부록 텍스트."""
     parts = []
 
-    options = data.get('career_options', [])
+    options = data.get("career_options", [])
     if isinstance(options, list) and options:
         parts.append("
 
@@ -197,21 +197,26 @@ def build_design_appendix(data: dict) -> str:
         for i, o in enumerate(options[:3], 1):
             if not isinstance(o, dict):
                 continue
-            title = o.get('title', '')
-            fit = o.get('fit_reason', '')
-            risk = o.get('risk', '')
-            out = o.get('outlook', '')
-            parts.append(f"{i}. **{title}**
-- 적합: {fit}
-- 리스크: {risk}
-- 전망: {out}")
+            title = o.get("title", "")
+            fit = o.get("fit_reason", "")
+            risk = o.get("risk", "")
+            out = o.get("outlook", "")
+            parts.append(
+                f"{i}. **{title}**
+"
+                f"- 적합: {fit}
+"
+                f"- 리스크: {risk}
+"
+                f"- 전망: {out}"
+            )
 
-    rec = (data.get('recommended_direction') or '').strip()
+    rec = (data.get("recommended_direction") or "").strip()
     if rec:
         parts.append(f"
 **현재 유력 방향(초안):** {rec}")
 
-    drafts = normalize_activities(data.get('draft_activities', []))
+    drafts = normalize_activities(data.get("draft_activities", []))
     if drafts:
         parts.append("
 ---
@@ -220,6 +225,7 @@ def build_design_appendix(data: dict) -> str:
             parts.append(f"- {badge(a.get('priority','권장'))} **{a.get('title','')}**")
 
     return "
+".join(parts)
 ".join(parts)
 
 # ======================
@@ -275,7 +281,7 @@ def main():
             if st.session_state.stage=="DISCOVERY":
                 if data.get('next_action')=="READY_FOR_DESIGN" or st.session_state.discovery_turns>=MAX_DISCOVERY_TURNS:
                     st.session_state.stage="DESIGN"
-           elif st.session_state.stage == "DESIGN":
+            elif st.session_state.stage == "DESIGN":
              st.session_state.career_options = data.get("career_options", [])
              st.session_state.recommended_direction = (data.get("recommended_direction") or "").strip()
              st.session_state.activities = normalize_activities(data.get("draft_activities", []))

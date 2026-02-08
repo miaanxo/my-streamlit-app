@@ -467,10 +467,7 @@ def _build_design_chat_appendix(career_options, recommended_direction, draft_act
     parts = []
 
     if isinstance(career_options, list) and career_options:
-        parts.append("
-
----
-**초안(진로 옵션)**")
+        parts.append("\n\n---\n**초안(진로 옵션)**")
         for i, opt in enumerate(career_options[:3], start=1):
             if not isinstance(opt, dict):
                 continue
@@ -478,30 +475,20 @@ def _build_design_chat_appendix(career_options, recommended_direction, draft_act
             fit = opt.get("fit_reason", "")
             risk = opt.get("risk", "")
             out = opt.get("outlook", "")
-            parts.append(
-                f"{i}. **{title}**
-"
-                f"- 적합: {fit}
-"
-                f"- 리스크: {risk}
-"
-                f"- 전망: {out}"
-            )
+            parts.append(f"{i}. **{title}**\n- 적합: {fit}\n- 리스크: {risk}\n- 전망: {out}")
 
     if recommended_direction:
-        parts.append(f"
-**현재 가장 유력한 방향(초안):** {recommended_direction}")
+        parts.append(f"\n**현재 가장 유력한 방향(초안):** {recommended_direction}")
 
     if isinstance(draft_activities, list) and draft_activities:
-        parts.append("
----
-**초안(필요활동 TOP 6)**")
+        parts.append("\n---\n**초안(필요활동 TOP 6)**")
         for a in draft_activities[:6]:
             if not isinstance(a, dict):
                 continue
             parts.append(f"- {badge(a.get('priority','권장'))} **{a.get('title','')}**")
 
-    return "
+    return "\n".join(parts)
+ "
 ".join(parts)
 
 

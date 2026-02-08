@@ -20,7 +20,7 @@ MAX_DISCOVERY_TURNS = 4
 
 DISCOVERY_PROMPT = """
 너는 전문 진로 컨설턴트다. 현재 단계는 [대화 단계].
-목표: 관심사/강점/가치관 파악.
+목표: 관심사/강점/가치관/제약 파악.
 규칙: 질문/요약만, 해결책/계획 제시 금지, 질문 최대 3개.
 출력(JSON): assistant_message, discovery_summary, next_action
 """
@@ -145,18 +145,82 @@ def render_roadmap():
     if not roadmap:
         st.info("아직 로드맵이 없습니다.")
         return
-    acts = {a['id']: a for a in normalize_activities(st.session_state.get("activities", []))}
-    for r in roadmap:
+
+    acts_list = normalize_activities(st.session_state.get("activities", []))
+    acts_by_id = {a.get('id'): a for a in acts_list if a.get('id')}
+    acts_by_title = {(a.get('title') or '').strip(): a for a in acts_list if (a.get('title') or '').strip()}
+
+    def _resolve(k):
+        if k in acts_by_id:
+            return acts_by_id[k]
+        if isinstance(k, str) and k.strip() in acts_by_title:
+            return acts_by_title[k.strip()]
+        return None
+
+    for r in sorted(roadmap, key=lambda x: x.get('year', 0)):
         st.markdown(f"### {r.get('year')}년")
         c1, c2 = st.columns(2)
         with c1:
             st.markdown("상반기")
+            shown = 0
             for k in r.get('h1', []):
-                if k in acts: st.markdown(f"- {acts[k]['title']}")
+                a = _resolve(k)
+                if not a:
+                    continue
+                shown += 1
+                st.markdown(f"- {badge(a.get('priority','권장'))} {a.get('title','')}", unsafe_allow_html=True)
+            if shown == 0:
+                st.caption("배치된 활동이 없어요.")
         with c2:
             st.markdown("하반기")
+            shown = 0
             for k in r.get('h2', []):
-                if k in acts: st.markdown(f"- {acts[k]['title']}")
+                a = _resolve(k)
+                if not a:
+                    continue
+                shown += 1
+                st.markdown(f"- {badge(a.get('priority','권장'))} {a.get('title','')}", unsafe_allow_html=True)
+            if shown == 0:
+                st.caption("배치된 활동이 없어요.")
+
+
+def build_design_appendix(data: dict) -> str:
+    """DESIGN 단계에서 '제안(초안)'을 채팅창에 반드시 보여주기 위한 부록 텍스트."""
+    parts = []
+
+    options = data.get('career_options', [])
+    if isinstance(options, list) and options:
+        parts.append("
+
+---
+**초안(진로 옵션)**")
+        for i, o in enumerate(options[:3], 1):
+            if not isinstance(o, dict):
+                continue
+            title = o.get('title', '')
+            fit = o.get('fit_reason', '')
+            risk = o.get('risk', '')
+            out = o.get('outlook', '')
+            parts.append(f"{i}. **{title}**
+- 적합: {fit}
+- 리스크: {risk}
+- 전망: {out}")
+
+    rec = (data.get('recommended_direction') or '').strip()
+    if rec:
+        parts.append(f"
+**현재 유력 방향(초안):** {rec}")
+
+    drafts = normalize_activities(data.get('draft_activities', []))
+    if drafts:
+        parts.append("
+---
+**초안(필요활동 TOP 6)**")
+        for a in drafts[:6]:
+            parts.append(f"- {badge(a.get('priority','권장'))} **{a.get('title','')}**")
+
+    return "
+".join(parts)
 
 # ======================
 # Main
@@ -191,16 +255,55 @@ def main():
             with st.chat_message("assistant"), st.spinner("생각중..."):
                 data = llm_call(client, prompt, st.session_state.messages)
                 msg = (data.get('assistant_message') or '').strip()
-                st.markdown(msg)
-            st.session_state.messages.append({"role":"assistant","content":msg})
+
+                # ✅ 결과 내기 전(=DESIGN)에도 제안/초안을 채팅창에 반드시 표시
+                if st.session_state.stage == "DESIGN":
+                    appendix = build_design_appendix(data)
+                    if appendix:
+                        msg = msg + appendix
+
+                # FINAL 단계 메시지엔 업데이트 안내를 덧붙임
+                if st.session_state.stage == "FINAL":
+                    msg += "
+
+---
+[완료] 필요활동과 로드맵을 업데이트했어요."
+
+                st.markdown(msg, unsafe_allow_html=True)
+
+            st.session_state.messages.append({"role": "assistant", "content": msg})
             if st.session_state.stage=="DISCOVERY":
                 if data.get('next_action')=="READY_FOR_DESIGN" or st.session_state.discovery_turns>=MAX_DISCOVERY_TURNS:
                     st.session_state.stage="DESIGN"
-            elif st.session_state.stage=="DESIGN":
-                st.session_state.career_options = data.get('career_options', [])
-                st.session_state.recommended_direction = data.get('recommended_direction', '')
-                st.session_state.activities = normalize_activities(data.get('draft_activities', []))
-                if data.get('next_action')=="READY_FOR_FINAL": st.session_state.stage="FINAL"
+           elif st.session_state.stage == "DESIGN":
+             st.session_state.career_options = data.get("career_options", [])
+             st.session_state.recommended_direction = (data.get("recommended_direction") or "").strip()
+             st.session_state.activities = normalize_activities(data.get("draft_activities", []))
+
+               # ✅ 사용자가 "이대로 진행해" 같은 확정 표현을 하면 FINAL로 확실히 전환
+             st.session_state.setdefault("design_turns", 0)
+             st.session_state.design_turns += 1
+
+             confirm_re = r"(이대로\s*진행|이대로\s*가자|확정|최종|결정|진행해|좋아요|좋아|오케이|ok|OK|go)"
+             user_confirmed = bool(re.search(confirm_re, user_input or "", flags=re.IGNORECASE))
+
+             model_ready = data.get("next_action") == "READY_FOR_FINAL"
+             enough_draft = bool(st.session_state.recommended_direction) and len(st.session_state.activities) >= 6
+             timeout = st.session_state.design_turns >= 3
+
+             if model_ready or user_confirmed or enough_draft or timeout:
+               st.session_state.stage = "FINAL"
+               # FINAL 즉시 생성해서 로드맵/활동이 바로 보이게
+              try:
+                  final_data = llm_call(client, FINAL_PROMPT, st.session_state.messages)
+                  final_msg = (final_data.get("assistant_message") or "").strip()
+                  final_msg += "\n\n---\n[완료] 필요활동과 로드맵을 업데이트했어요."
+                  st.session_state.messages.append({"role": "assistant", "content": final_msg})
+                  st.session_state.activities = normalize_activities(final_data.get("activities", []))
+                  st.session_state.roadmap = normalize_roadmap(final_data.get("roadmap", []))
+              except Exception:
+                 pass
+
             elif st.session_state.stage=="FINAL":
                 st.session_state.activities = normalize_activities(data.get('activities', []))
                 st.session_state.roadmap = normalize_roadmap(data.get('roadmap', []))

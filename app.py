@@ -8,6 +8,7 @@ import uuid
 from pathlib import Path
 
 import streamlit as st
+import streamlit.components.v1 as components
 from openai import OpenAI
 
 APP_TITLE = "진설이 - 나만의 진로컨설턴트"
@@ -317,13 +318,11 @@ def _ensure_roadmap_css_once():
 
 
 def _render_timeline_header(years: list[int]):
-    """긴 가로선(타임라인) + 연도 점. 연도 점 클릭 시 해당 연도 카드로 스크롤."""
+    """긴 가로선(타임라인) + 연도 점. Streamlit markdown에서 HTML이 깨지는 경우가 있어 components.html로 렌더."""
     years = [y for y in years if isinstance(y, int)]
     years = sorted(list(dict.fromkeys(years)))
     if not years:
         return
-
-    _ensure_roadmap_css_once()
 
     n = len(years)
     positions = [50] if n == 1 else [int((i / (n - 1)) * 100) for i in range(n)]
@@ -340,16 +339,26 @@ def _render_timeline_header(years: list[int]):
         ]
     )
 
-    st.markdown(
-        f"""
-        <div class='j-tl'>
-          <div class='j-line'></div>
-          {markers}
-        </div>
-        <div class='j-sub'>연도 점을 누르면 해당 연도로 이동해요. 아래에서 상/하반기 계획을 확인할 수 있어요.</div>
-        """,
-        unsafe_allow_html=True,
-    )
+    html = f"""
+    <style>
+      .j-tl {{ position: relative; height: 54px; margin: 10px 0 18px 0; width: 100%; }}
+      .j-line {{ position: absolute; top: 22px; left: 0; right: 0; height: 8px; background: #e5e7eb; border-radius: 999px; }}
+      .j-dot {{ position: absolute; top: 12px; transform: translateX(-50%); text-align: center; }}
+      .j-dot-core {{ width: 14px; height: 14px; border-radius: 999px; background: #111827; border: 3px solid #f9fafb; box-shadow: 0 1px 2px rgba(0,0,0,0.15); margin: 0 auto; }}
+      .j-year {{ margin-top: 6px; font-weight: 900; font-size: 13px; color: #111827; }}
+      .j-sub {{ margin-top: -10px; color: #6b7280; font-size: 13px; }}
+      .j-dot-link {{ text-decoration: none; }}
+      .j-dot-link:hover .j-dot-core {{ transform: scale(1.06); }}
+    </style>
+    <div class='j-tl'>
+      <div class='j-line'></div>
+      {markers}
+    </div>
+    <div class='j-sub'>연도 점을 누르면 해당 연도로 이동해요.</div>
+    """
+
+    # components.html은 별도 iframe으로 렌더되어 HTML이 텍스트로 노출되거나 깨지는 문제를 줄임
+    components.html(html, height=90, scrolling=False)
 
 
 def _resolve_activity(act_map: dict, title_map: dict, key):
@@ -680,7 +689,10 @@ def main():
                     try:
                         final_data = llm_call(client, FINAL_PROMPT, st.session_state.messages)
                         final_msg = (final_data.get("assistant_message") or "").strip()
-                        final_msg = final_msg + "\n\n---\n[완료] 필요활동과 로드맵을 업데이트했어요. 위 탭에서 바로 확인할 수 있어요."
+                        final_msg = final_msg + "
+
+---
+[완료] 필요활동과 로드맵을 업데이트했어요. 위 탭에서 바로 확인할 수 있어요."
                         st.session_state.messages.append({"role": "assistant", "content": final_msg})
 
                         st.session_state.career_plan = final_data.get("career_plan", st.session_state.career_plan)

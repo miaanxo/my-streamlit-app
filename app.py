@@ -267,34 +267,38 @@ def main():
                 if data.get('next_action')=="READY_FOR_DESIGN" or st.session_state.discovery_turns>=MAX_DISCOVERY_TURNS:
                     st.session_state.stage="DESIGN"
             elif st.session_state.stage == "DESIGN":
-             st.session_state.career_options = data.get("career_options", [])
-             st.session_state.recommended_direction = (data.get("recommended_direction") or "").strip()
-             st.session_state.activities = normalize_activities(data.get("draft_activities", []))
+    st.session_state.career_options = data.get("career_options", [])
+    st.session_state.recommended_direction = (data.get("recommended_direction") or "").strip()
+    st.session_state.activities = normalize_activities(data.get("draft_activities", []))
 
-               # ✅ 사용자가 "이대로 진행해" 같은 확정 표현을 하면 FINAL로 확실히 전환
-             st.session_state.setdefault("design_turns", 0)
-             st.session_state.design_turns += 1
+    # 사용자가 확정 의사를 표현하면 FINAL로 전환
+    st.session_state.setdefault("design_turns", 0)
+    st.session_state.design_turns += 1
 
-             confirm_re = r"(이대로\s*진행|이대로\s*가자|확정|최종|결정|진행해|좋아요|좋아|오케이|ok|OK|go)"
-             user_confirmed = bool(re.search(confirm_re, user_input or "", flags=re.IGNORECASE))
+    confirm_re = r"(이대로\s*진행|이대로\s*가자|확정|최종|결정|진행해|좋아요|좋아|오케이|ok|OK|go)"
+    user_confirmed = bool(re.search(confirm_re, user_input or "", flags=re.IGNORECASE))
 
-             model_ready = data.get("next_action") == "READY_FOR_FINAL"
-             enough_draft = bool(st.session_state.recommended_direction) and len(st.session_state.activities) >= 6
-             timeout = st.session_state.design_turns >= 3
+    model_ready = data.get("next_action") == "READY_FOR_FINAL"
+    enough_draft = bool(st.session_state.recommended_direction) and len(st.session_state.activities) >= 6
+    timeout = st.session_state.design_turns >= 3
 
-             if model_ready or user_confirmed or enough_draft or timeout:
-               st.session_state.stage = "FINAL"
-               # FINAL 즉시 생성해서 로드맵/활동이 바로 보이게
-              try:
-                  final_data = llm_call(client, FINAL_PROMPT, st.session_state.messages)
-                  final_msg = (final_data.get("assistant_message") or "").strip()
-                  final_msg += "\n\n---\n[완료] 필요활동과 로드맵을 업데이트했어요."
-                  st.session_state.messages.append({"role": "assistant", "content": final_msg})
-                  st.session_state.activities = normalize_activities(final_data.get("activities", []))
-                  st.session_state.roadmap = normalize_roadmap(final_data.get("roadmap", []))
-              except Exception:
-                 pass
-
+    if model_ready or user_confirmed or enough_draft or timeout:
+        st.session_state.stage = "FINAL"
+        try:
+            final_data = llm_call(client, FINAL_PROMPT, st.session_state.messages)
+            final_msg = (final_data.get("assistant_message") or "").strip()
+            final_msg += "\n\n---\n[완료] 필요활동과 로드맵을 업데이트했어요."
+            st.session_state.messages.append(
+                {"role": "assistant", "content": final_msg}
+            )
+            st.session_state.activities = normalize_activities(
+                final_data.get("activities", [])
+            )
+            st.session_state.roadmap = normalize_roadmap(
+                final_data.get("roadmap", [])
+            )
+        except Exception:
+            pass
             elif st.session_state.stage=="FINAL":
                 st.session_state.activities = normalize_activities(data.get('activities', []))
                 st.session_state.roadmap = normalize_roadmap(data.get('roadmap', []))

@@ -73,19 +73,13 @@ PRIORITY_BADGE = {
     "선택": {"label": "플러스", "color": "#22c55e"}, # green
 }
 
+
 def _extract_json(text: str) -> dict:
-    """
-    모델이 실수로 JSON 바깥 텍스트를 섞었을 때 대비.
-    가장 바깥의 JSON 객체를 찾아 파싱.
-    """
     text = text.strip()
-    # 1) 바로 파싱 시도
     try:
         return json.loads(text)
     except Exception:
         pass
-
-    # 2) 가장 큰 {...} 블록 찾기
     m = re.search(r"\{.*\}", text, flags=re.DOTALL)
     if not m:
         raise ValueError("JSON을 찾지 못했습니다.")
@@ -93,37 +87,33 @@ def _extract_json(text: str) -> dict:
 
 
 def llm_step(client: OpenAI, messages: list[dict]) -> dict:
-    """
-    Responses API로 JSON 한 덩어리 출력 유도.
-    """
     resp = client.responses.create(
-        model="gpt-5.2",
+        model="gpt-5-mini",
         input=[
             {"role": "system", "content": SYSTEM_PROMPT},
             *messages
         ],
         text={"verbosity": "low"},
     )
-    # openai-python Responses는 output_text로 텍스트 합본 제공
     data = _extract_json(resp.output_text)
     return data
 
 
 def init_state():
     if "messages" not in st.session_state:
-        st.session_state.messages = []  # [{"role":"user|assistant","content":"..."}]
+        st.session_state.messages = []
     if "profile" not in st.session_state:
         st.session_state.profile = {}
     if "career_plan" not in st.session_state:
         st.session_state.career_plan = {}
     if "activities" not in st.session_state:
-        st.session_state.activities = []  # list[dict]
+        st.session_state.activities = []
     if "roadmap" not in st.session_state:
-        st.session_state.roadmap = []  # list[dict]
+        st.session_state.roadmap = []
     if "activity_status" not in st.session_state:
-        st.session_state.activity_status = {}  # id -> {"done": bool, "memo": str}
+        st.session_state.activity_status = {}
     if "roadmap_open" not in st.session_state:
-        st.session_state.roadmap_open = {}  # f"{year}-h1"/"{year}-h2" -> bool
+        st.session_state.roadmap_open = {}
 
 
 def badge_html(priority: str) -> str:
@@ -133,23 +123,21 @@ def badge_html(priority: str) -> str:
         display:inline-block;
         padding:4px 10px;
         border-radius:999px;
-        background:{meta["color"]};
+        background:{meta['color']};
         color:white;
         font-size:12px;
         font-weight:700;
         line-height:1;
-    ">{meta["label"]}</span>
+    ">{meta['label']}</span>
     """
 
 
 def render_activities_table(activities: list[dict]):
     st.subheader("필요활동 / 역량")
-
     if not activities:
-        st.info("아직 생성된 활동이 없어요. 채팅에서 진로 방향을 더 이야기하거나, 계획 생성을 요청해보세요.")
+        st.info("아직 생성된 활동이 없어요. 채팅에서 진로 방향을 더 이야기해보세요.")
         return
 
-    # 헤더
     header_cols = st.columns([0.6, 2.2, 4.5, 2.6, 3.2])
     header_cols[0].markdown("**완료**")
     header_cols[1].markdown("**제목**")
@@ -157,36 +145,19 @@ def render_activities_table(activities: list[dict]):
     header_cols[3].markdown("**관련 링크**")
     header_cols[4].markdown("**메모**")
 
-    st.markdown("<hr style='margin: 6px 0 10px 0;'>", unsafe_allow_html=True)
+    st.markdown("<hr>", unsafe_allow_html=True)
 
     for a in activities:
         aid = a.get("id") or str(uuid.uuid4())
         a["id"] = aid
-
-        if aid not in st.session_state.activity_status:
-            st.session_state.activity_status[aid] = {"done": False, "memo": ""}
-
+        st.session_state.activity_status.setdefault(aid, {"done": False, "memo": ""})
         status = st.session_state.activity_status[aid]
 
         row = st.columns([0.6, 2.2, 4.5, 2.6, 3.2], vertical_alignment="top")
+        status["done"] = row[0].checkbox("", value=status["done"], key=f"done_{aid}")
+        row[1].markdown(f"**{a.get('title','')}**<br>{badge_html(a.get('priority','권장'))}", unsafe_allow_html=True)
+        row[2].write(a.get("description", ""))
 
-        # 완료 체크
-        status["done"] = row[0].checkbox(
-            label="",
-            value=status["done"],
-            key=f"done_{aid}",
-        )
-
-        # 제목 + 중요도 배지
-        title = a.get("title", "").strip()
-        priority = a.get("priority", "권장")
-        row[1].markdown(f"**{title}**<br>{badge_html(priority)}", unsafe_allow_html=True)
-
-        # 내용
-        desc = a.get("description", "").strip()
-        row[2].write(desc)
-
-        # 링크
         links = a.get("links") or []
         if links:
             for i, link in enumerate(links[:3], start=1):
@@ -194,204 +165,81 @@ def render_activities_table(activities: list[dict]):
         else:
             row[3].caption("—")
 
-        # 메모
-        status["memo"] = row[4].text_area(
-            label="",
-            value=status["memo"],
-            key=f"memo_{aid}",
-            height=80,
-            placeholder="예) 언제까지 / 참고자료 / 진행상황",
-        )
-
-        st.markdown("<hr style='margin: 10px 0;'>", unsafe_allow_html=True)
+        status["memo"] = row[4].text_area("", value=status["memo"], key=f"memo_{aid}", height=80)
+        st.markdown("<hr>", unsafe_allow_html=True)
 
 
 def render_roadmap(roadmap: list[dict], activities: list[dict]):
     st.subheader("연도별 로드맵")
-
     if not roadmap or not activities:
-        st.info("로드맵을 보려면 먼저 활동/로드맵 생성이 필요해요. 채팅에서 계획 생성을 요청해보세요.")
+        st.info("로드맵을 보려면 먼저 계획 생성이 필요해요.")
         return
 
-    # id -> 활동 dict
     act_map = {a["id"]: a for a in activities if a.get("id")}
 
-    years = [r.get("year") for r in roadmap if r.get("year")]
-    years = [y for y in years if isinstance(y, int)]
-    years = sorted(set(years))
-
-    # 가로 타임라인(간단 HTML)
-    if years:
-        year_marks = " ".join([f"<span style='margin-right:24px;font-weight:700;'>{y}</span>" for y in years])
-        st.markdown(
-            f"""
-            <div style="padding:10px 0 6px 0;">
-              <div style="height:6px;background:#e5e7eb;border-radius:999px;position:relative;"></div>
-              <div style="margin-top:10px;color:#111827;">{year_marks}</div>
-            </div>
-            """,
-            unsafe_allow_html=True,
-        )
-
-    # 연도별 상/하반기 버튼 + 펼침
     for r in sorted(roadmap, key=lambda x: x.get("year", 0)):
         year = r.get("year")
         if not isinstance(year, int):
             continue
-
         st.markdown(f"### {year}년")
 
-        c1, c2 = st.columns([1, 1])
-        key_h1 = f"{year}-h1"
-        key_h2 = f"{year}-h2"
-        if key_h1 not in st.session_state.roadmap_open:
-            st.session_state.roadmap_open[key_h1] = False
-        if key_h2 not in st.session_state.roadmap_open:
-            st.session_state.roadmap_open[key_h2] = False
-
-        if c1.button("상반기(1~6월) 보기/접기", key=f"btn_{key_h1}"):
-            st.session_state.roadmap_open[key_h1] = not st.session_state.roadmap_open[key_h1]
-        if c2.button("하반기(7~12월) 보기/접기", key=f"btn_{key_h2}"):
-            st.session_state.roadmap_open[key_h2] = not st.session_state.roadmap_open[key_h2]
-
-        # 상반기
-        if st.session_state.roadmap_open[key_h1]:
-            st.markdown("#### 상반기")
-            ids = r.get("h1") or []
-            if not ids:
-                st.caption("배치된 활동이 없어요.")
-            for aid in ids:
-                a = act_map.get(aid)
-                if not a:
-                    continue
-                st.markdown(f"- {badge_html(a.get('priority','권장'))} <b>{a.get('title','')}</b>: {a.get('description','')}",
-                            unsafe_allow_html=True)
-
-        # 하반기
-        if st.session_state.roadmap_open[key_h2]:
-            st.markdown("#### 하반기")
-            ids = r.get("h2") or []
-            if not ids:
-                st.caption("배치된 활동이 없어요.")
-            for aid in ids:
-                a = act_map.get(aid)
-                if not a:
-                    continue
-                st.markdown(f"- {badge_html(a.get('priority','권장'))} <b>{a.get('title','')}</b>: {a.get('description','')}",
-                            unsafe_allow_html=True)
-
+        for half, label in [("h1", "상반기"), ("h2", "하반기")]:
+            key = f"{year}-{half}"
+            st.session_state.roadmap_open.setdefault(key, False)
+            if st.button(f"{label} 보기/접기", key=f"btn_{key}"):
+                st.session_state.roadmap_open[key] = not st.session_state.roadmap_open[key]
+            if st.session_state.roadmap_open[key]:
+                for aid in r.get(half, []):
+                    a = act_map.get(aid)
+                    if a:
+                        st.markdown(f"- {badge_html(a.get('priority','권장'))} <b>{a.get('title')}</b>", unsafe_allow_html=True)
         st.markdown("---")
 
 
 def main():
     st.set_page_config(page_title=APP_TITLE, page_icon="🧭", layout="wide")
     init_state()
-
     st.title(APP_TITLE)
 
-    # Sidebar: API Key
     with st.sidebar:
         st.header("설정")
-        api_key = st.text_input("OpenAI API Key", type="password", placeholder="sk-...")
-        st.caption("키는 브라우저 세션에만 저장됩니다. (서버 저장 X)")
-
-        model_hint = "gpt-5.2"
-        st.caption(f"사용 모델: {model_hint}")
-
+        api_key = st.text_input("OpenAI API Key", type="password")
+        st.caption("키는 브라우저 세션에만 저장됩니다.")
         if st.button("대화/데이터 초기화"):
-            for k in [
-                "messages", "profile", "career_plan", "activities",
-                "roadmap", "activity_status", "roadmap_open"
-            ]:
-                if k in st.session_state:
-                    del st.session_state[k]
+            st.session_state.clear()
             init_state()
             st.rerun()
 
-    # Tabs
     tab_chat, tab_act, tab_road = st.tabs(["채팅", "필요활동", "로드맵"])
 
-    # --- Chat Tab ---
     with tab_chat:
-        st.markdown("대화를 통해 관심사/진로방향을 파악하고, 그 기반으로 **필요활동**과 **로드맵**을 자동 생성해요.")
-
-        # 기존 메시지 렌더
         for m in st.session_state.messages:
             with st.chat_message(m["role"]):
                 st.markdown(m["content"])
 
-        user_input = st.chat_input("예) 나는 교육/데이터에 관심이 있어. 어떤 진로가 좋을까?")
-
+        user_input = st.chat_input("예) 나는 교육/데이터에 관심이 있어")
         if user_input:
             if not api_key:
-                st.warning("사이드바에 OpenAI API Key를 먼저 입력해줘!")
+                st.warning("API Key를 입력해주세요")
             else:
                 client = OpenAI(api_key=api_key)
-
-                # 1) 유저 메시지 추가
                 st.session_state.messages.append({"role": "user", "content": user_input})
                 with st.chat_message("user"):
                     st.markdown(user_input)
-
-                # 2) 모델 호출(한 번에: 답변 + 산출물 갱신)
                 with st.chat_message("assistant"):
-                    with st.spinner("진설이가 진로를 정리하는 중..."):
-                        try:
-                            data = llm_step(client, st.session_state.messages)
+                    with st.spinner("진설이가 정리 중..."):
+                        data = llm_step(client, st.session_state.messages)
+                        msg = data.get("assistant_message", "")
+                        st.markdown(msg)
+                        st.session_state.messages.append({"role": "assistant", "content": msg})
+                        st.session_state.profile = data.get("profile", {})
+                        st.session_state.career_plan = data.get("career_plan", {})
+                        st.session_state.activities = data.get("activities", [])
+                        st.session_state.roadmap = data.get("roadmap", [])
 
-                            assistant_message = data.get("assistant_message", "").strip() or "더 자세히 알려줘!"
-                            st.markdown(assistant_message)
-
-                            # 상태 업데이트
-                            st.session_state.profile = data.get("profile") or st.session_state.profile
-                            st.session_state.career_plan = data.get("career_plan") or st.session_state.career_plan
-
-                            new_acts = data.get("activities") or []
-                            # activities id 보정 + 상태 유지
-                            if isinstance(new_acts, list) and new_acts:
-                                fixed = []
-                                for a in new_acts:
-                                    if not isinstance(a, dict):
-                                        continue
-                                    a.setdefault("id", str(uuid.uuid4()))
-                                    a.setdefault("links", [])
-                                    fixed.append(a)
-                                st.session_state.activities = fixed
-
-                                for a in st.session_state.activities:
-                                    aid = a["id"]
-                                    st.session_state.activity_status.setdefault(aid, {"done": False, "memo": ""})
-
-                            new_roadmap = data.get("roadmap") or []
-                            if isinstance(new_roadmap, list) and new_roadmap:
-                                st.session_state.roadmap = new_roadmap
-
-                            # 3) 어시스턴트 메시지 저장
-                            st.session_state.messages.append({"role": "assistant", "content": assistant_message})
-
-                        except Exception as e:
-                            st.error(f"응답 처리 중 오류가 났어요: {e}")
-
-        # 빠른 요약 카드
-        if st.session_state.career_plan:
-            with st.expander("현재 정리된 진로 계획(요약)"):
-                cp = st.session_state.career_plan
-                st.markdown(f"**방향**: {cp.get('direction','')}")
-                st.markdown("**전략**")
-                for s in cp.get("strategy", [])[:8]:
-                    st.write(f"- {s}")
-                st.markdown("**단기 목표(3~6개월)**")
-                for g in cp.get("short_term_goals", [])[:6]:
-                    st.write(f"- {g}")
-                st.markdown("**중기 목표(1~2년)**")
-                for g in cp.get("mid_term_goals", [])[:6]:
-                    st.write(f"- {g}")
-
-    # --- Activities Tab ---
     with tab_act:
         render_activities_table(st.session_state.activities)
 
-    # --- Roadmap Tab ---
     with tab_road:
         render_roadmap(st.session_state.roadmap, st.session_state.activities)
 

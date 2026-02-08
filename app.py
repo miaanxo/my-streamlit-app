@@ -227,7 +227,8 @@ def build_design_appendix(career_options, recommended_direction, draft_activitie
     parts = []
 
     if isinstance(career_options, list) and career_options:
-        
+        parts.append("
+
 ---
 **초안(진로 옵션)**")
         for i, o in enumerate(career_options[:3], 1):
@@ -235,14 +236,25 @@ def build_design_appendix(career_options, recommended_direction, draft_activitie
                 continue
             title = o.get('title', '')
             fit = o.get('fit_reason', '')
-            parts.append(f"{i}. **{title}** - {fit}")
+            risk = o.get('risk', '')
+            out = o.get('outlook', '')
+            parts.append(
+                f"{i}. **{title}**
+"
+                f"- 적합: {fit}
+"
+                f"- 리스크: {risk}
+"
+                f"- 전망: {out}"
+            )
 
     if recommended_direction:
         parts.append(f"
 **유력 방향:** {recommended_direction}")
 
     if isinstance(draft_activities, list) and draft_activities:
-        ---
+        parts.append("
+---
 **초안(필요활동)**")
         for a in draft_activities[:6]:
             if not isinstance(a, dict):
@@ -251,24 +263,7 @@ def build_design_appendix(career_options, recommended_direction, draft_activitie
 
     return "
 ".join(parts)
-".join(parts)
-(career_options, recommended_direction, draft_activities) -> str:
-    parts = []
-    if career_options:
-        
----
-**초안(진로 옵션)**")
-        for i,o in enumerate(career_options[:3],1):
-            parts.append(f"{i}. **{o.get('title','')}** - {o.get('fit_reason','')}")
-    if recommended_direction:
-        parts.append(f"
-**유력 방향:** {recommended_direction}")
-    if draft_activities:
-        ---
-**초안(필요활동)**")
-        for a in draft_activities[:6]: parts.append(f"- {a.get('title','')}")
-    return "
-".join(parts)
+
 
 # ======================
 # Main

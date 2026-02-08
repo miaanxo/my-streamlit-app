@@ -463,11 +463,14 @@ def render_roadmap():
 
 
 def _build_design_chat_appendix(career_options, recommended_direction, draft_activities) -> str:
-    """DESIGN 단계 초안을 채팅에 안전하게 붙이기(단일 라인 문자열만 사용)."""
+    """DESIGN 단계 초안을 채팅에 안전하게 붙이기."""
     parts = []
 
     if isinstance(career_options, list) and career_options:
-        parts.append("\n\n---\n**초안(진로 옵션)**")
+        parts.append("
+
+---
+**초안(진로 옵션)**")
         for i, opt in enumerate(career_options[:3], start=1):
             if not isinstance(opt, dict):
                 continue
@@ -475,19 +478,26 @@ def _build_design_chat_appendix(career_options, recommended_direction, draft_act
             fit = opt.get("fit_reason", "")
             risk = opt.get("risk", "")
             out = opt.get("outlook", "")
-            parts.append(f"{i}. **{title}**\n- 적합: {fit}\n- 리스크: {risk}\n- 전망: {out}")
+            parts.append(f"{i}. **{title}**
+- 적합: {fit}
+- 리스크: {risk}
+- 전망: {out}")
 
     if recommended_direction:
-        parts.append(f"\n**현재 가장 유력한 방향(초안):** {recommended_direction}")
+        parts.append(f"
+**현재 가장 유력한 방향(초안):** {recommended_direction}")
 
     if isinstance(draft_activities, list) and draft_activities:
-        parts.append("\n---\n**초안(필요활동 TOP 6)**")
+        parts.append("
+---
+**초안(필요활동 TOP 6)**")
         for a in draft_activities[:6]:
             if not isinstance(a, dict):
                 continue
             parts.append(f"- {badge(a.get('priority','권장'))} **{a.get('title','')}**")
 
-    return "\n".join(parts).join(parts)
+    return "
+".join(parts).join(parts)
 
 
 # ======================
@@ -556,10 +566,7 @@ def main():
                             msg += appendix
 
                     if st.session_state.stage == "FINAL":
-                        msg += "
-
----
-[완료] 필요활동과 로드맵을 업데이트했어요. 위 탭에서 확인할 수 있어요."
+                        msg += "\n\n---\n[완료] 필요활동과 로드맵을 업데이트했어요. 위 탭에서 확인할 수 있어요."
 
                     st.markdown(msg, unsafe_allow_html=True)
 
@@ -587,10 +594,8 @@ def main():
                     try:
                         final_data = llm_call(client, FINAL_PROMPT, st.session_state.messages)
                         final_msg = (final_data.get("assistant_message") or "").strip()
-                        final_msg += "
+                        final_msg += "\n\n---\n[완료] 필요활동과 로드맵을 업데이트했어요. 위 탭에서 확인할 수 있어요."
 
----
-[완료] 필요활동과 로드맵을 업데이트했어요. 위 탭에서 확인할 수 있어요."
                         st.session_state.messages.append({"role": "assistant", "content": final_msg})
                         st.session_state.career_plan = final_data.get("career_plan", st.session_state.career_plan)
                         st.session_state.activities = normalize_activities(final_data.get("activities", st.session_state.activities))

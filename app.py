@@ -97,6 +97,7 @@ FINAL_PROMPT = """
 규칙:
 - 활동은 중복 없이 최소 10개 이상.
 - 로드맵은 연도별 상/하반기로 나눈다.
+- roadmap.h1/h2에는 activities의 id를 넣는다.
 
 출력은 반드시 JSON 한 덩어리로만 한다.
 {
@@ -133,11 +134,10 @@ PRIORITY_BADGE = {
 }
 
 # ======================
-# Utils
+# Persistence
 # ======================
 
 def save_state():
-    # session_state는 dict-like이지만, 내부에 직렬화 불가 객체가 섞이지 않도록 보수적으로 저장
     snapshot = {
         "stage": st.session_state.get("stage"),
         "messages": st.session_state.get("messages"),
@@ -160,8 +160,12 @@ def load_state():
         for k, v in data.items():
             st.session_state[k] = v
 
+# ======================
+# LLM Utils
+# ======================
 
 def extract_json(text: str) -> dict:
+    text = (text or "").strip()
     try:
         return json.loads(text)
     except Exception:
@@ -182,8 +186,51 @@ def llm_call(client, system_prompt, messages):
     )
     return extract_json(resp.output_text)
 
+
+def normalize_activities(raw):
+    """activities/draft_activities를 UI가 깨지지 않게 정규화"""
+    if not isinstance(raw, list):
+        return []
+    out = []
+    for a in raw:
+        if not isinstance(a, dict):
+            continue
+        a = dict(a)
+        a.setdefault("id", str(uuid.uuid4()))
+        a.setdefault("title", "")
+        a.setdefault("description", "")
+        a.setdefault("priority", "권장")
+        # FINAL에서만 links가 오지만, UI 일관성 위해 항상 보유
+        links = a.get("links")
+        if not isinstance(links, list):
+            a["links"] = []
+        out.append(a)
+    return out
+
+
+def normalize_roadmap(raw):
+    if not isinstance(raw, list):
+        return []
+    out = []
+    for r in raw:
+        if not isinstance(r, dict):
+            continue
+        rr = dict(r)
+        # year가 문자열로 오면 int 변환 시도
+        y = rr.get("year")
+        if isinstance(y, str) and y.isdigit():
+            rr["year"] = int(y)
+        rr.setdefault("h1", [])
+        rr.setdefault("h2", [])
+        if not isinstance(rr.get("h1"), list):
+            rr["h1"] = []
+        if not isinstance(rr.get("h2"), list):
+            rr["h2"] = []
+        out.append(rr)
+    return out
+
 # ======================
-# Init
+# State Init
 # ======================
 
 def init_state():
@@ -197,7 +244,7 @@ def init_state():
     st.session_state.setdefault("activities", [])
     st.session_state.setdefault("roadmap", [])
     st.session_state.setdefault("activity_status", {})
-    st.session_state.setdefault("roadmap_open", {})  # e.g. {"2026-h1": True}
+    st.session_state.setdefault("roadmap_open", {})
 
 # ======================
 # UI Helpers
@@ -207,7 +254,7 @@ def badge(priority: str) -> str:
     meta = PRIORITY_BADGE.get(priority, PRIORITY_BADGE["권장"])
     return (
         f"<span style='background:{meta['color']};color:white;"
-        "padding:3px 10px;border-radius:999px;font-size:12px;font-weight:700'>"
+        "padding:3px 10px;border-radius:999px;font-size:12px;font-weight:800'>"
         f"{meta['label']}</span>"
     )
 
@@ -216,7 +263,7 @@ def render_activities_table():
     st.subheader("필요활동")
     acts = st.session_state.activities
     if not acts:
-        st.info("아직 확정된 활동이 없습니다")
+        st.info("아직 활동이 없습니다. 채팅에서 설계/확정을 진행해 주세요.")
         return
 
     header = st.columns([0.7, 2.2, 4.5, 2.2, 3.2])
@@ -255,9 +302,15 @@ def render_activities_table():
         # 링크
         links = a.get("links") or []
         if isinstance(links, list) and links:
-            for i, l in enumerate(links[:3], start=1):
+            shown = 0
+            for l in links:
                 if isinstance(l, str) and l.startswith("http"):
-                    row[3].link_button(f"열기 {i}", l)
+                    shown += 1
+                    row[3].link_button(f"열기 {shown}", l)
+                    if shown >= 3:
+                        break
+            if shown == 0:
+                row[3].caption("—")
         else:
             row[3].caption("—")
 
@@ -274,81 +327,101 @@ def render_activities_table():
 
 
 def _render_timeline_header(years: list[int]):
-    """긴 가로선(타임라인) + 연도 마커를 HTML/CSS로 렌더."""
+    """오류가 나지 않도록 단순/견고한 타임라인 헤더 (긴 가로선 + 연도 점)"""
+    years = [y for y in years if isinstance(y, int)]
+    years = sorted(list(dict.fromkeys(years)))
     if not years:
         return
-    years = sorted(list(dict.fromkeys(years)))
 
-    # 마커를 균등 배치
-    markers = "".join(
-        [
+    # 마커를 %로 배치 (연도 개수에 따라 균등)
+    positions = []
+    n = len(years)
+    if n == 1:
+        positions = [50]
+    else:
+        for i in range(n):
+            positions.append(int((i / (n - 1)) * 100))
+
+    markers = []
+    for y, p in zip(years, positions):
+        markers.append(
             f"""
-            <div class='tl-marker'>
-              <div class='tl-dot'></div>
-              <div class='tl-year'>{y}</div>
+            <div class='j-dot' style='left:{p}%;'>
+              <div class='j-dot-core'></div>
+              <div class='j-year'>{y}</div>
             </div>
             """
-            for y in years
-        ]
+        )
+
+    st.markdown(
+        """
+        <style>
+          .j-tl { position: relative; height: 54px; margin: 8px 0 16px 0; }
+          .j-line { position: absolute; top: 22px; left: 0; right: 0; height: 8px; background: #e5e7eb; border-radius: 999px; }
+          .j-dot { position: absolute; top: 12px; transform: translateX(-50%); text-align: center; }
+          .j-dot-core { width: 14px; height: 14px; border-radius: 999px; background: #111827; border: 3px solid #f9fafb; box-shadow: 0 1px 2px rgba(0,0,0,0.15); margin: 0 auto; }
+          .j-year { margin-top: 6px; font-weight: 900; font-size: 13px; color: #111827; }
+          .j-sub { margin-top: -6px; color: #6b7280; font-size: 13px; }
+        </style>
+        """,
+        unsafe_allow_html=True,
     )
 
     st.markdown(
         f"""
-        <style>
-          .tl-wrap {{ margin: 10px 0 18px 0; }}
-          .tl-line {{ height: 8px; background: #e5e7eb; border-radius: 999px; position: relative; }}
-          .tl-markers {{ display: flex; justify-content: space-between; align-items: flex-start; margin-top: -18px; }}
-          .tl-marker {{ display: flex; flex-direction: column; align-items: center; min-width: 40px; }}
-          .tl-dot {{ width: 14px; height: 14px; border-radius: 999px; background: #111827; border: 3px solid #f9fafb; box-shadow: 0 1px 2px rgba(0,0,0,0.15); }}
-          .tl-year {{ margin-top: 6px; font-weight: 800; font-size: 14px; color: #111827; }}
-          .tl-sub {{ margin-top: 8px; color: #6b7280; font-size: 13px; }}
-        </style>
-        <div class='tl-wrap'>
-          <div class='tl-line'></div>
-          <div class='tl-markers'>
-            {markers}
-          </div>
-          <div class='tl-sub'>연도 마커를 기준으로 아래에서 상반기/하반기 활동을 확인할 수 있어요.</div>
+        <div class='j-tl'>
+          <div class='j-line'></div>
+          {''.join(markers)}
         </div>
+        <div class='j-sub'>연도별로 상반기/하반기를 펼쳐서 활동을 확인해요.</div>
         """,
         unsafe_allow_html=True,
     )
+
+
+def _resolve_activity(act_map: dict, title_map: dict, key):
+    """로드맵 항목이 id가 아닐 수도 있어(모델 실수). id 또는 title로 복구."""
+    if key in act_map:
+        return act_map[key]
+    if isinstance(key, str) and key in title_map:
+        return title_map[key]
+    return None
 
 
 def render_roadmap():
     st.subheader("로드맵")
     roadmap = st.session_state.roadmap
     if not roadmap:
-        st.info("아직 로드맵이 없습니다")
+        st.info("아직 로드맵이 없습니다. FINAL 단계에서 생성돼요.")
         return
 
-    # 활동 ID -> 활동
+    # 활동 맵 구성
     act_map = {}
+    title_map = {}
     for a in st.session_state.activities:
         if isinstance(a, dict) and a.get("id"):
             act_map[a["id"]] = a
+            t = (a.get("title") or "").strip()
+            if t:
+                title_map[t] = a
 
-    # 연도 리스트 추출 + 타임라인 헤더
+    # 연도 헤더
     years = []
     for r in roadmap:
         if isinstance(r, dict) and isinstance(r.get("year"), int):
             years.append(r["year"])
     _render_timeline_header(years)
 
-    # 연도별 섹션
+    # 연도별 카드
     for r in sorted([x for x in roadmap if isinstance(x, dict)], key=lambda x: x.get("year", 0)):
         year = r.get("year")
         if not isinstance(year, int):
             continue
 
-        # 카드처럼 보이게
         st.markdown(
-            """
-            <div style='padding:14px 14px 2px 14px; border:1px solid #e5e7eb; border-radius:16px; margin: 10px 0 14px 0; background:#ffffff;'>
-            """,
+            "<div style='padding:14px 14px 10px 14px; border:1px solid #e5e7eb; border-radius:16px; margin: 12px 0; background:#ffffff;'>",
             unsafe_allow_html=True,
         )
-
         st.markdown(f"### {year}년")
 
         c1, c2 = st.columns(2)
@@ -365,43 +438,35 @@ def render_roadmap():
         # 상반기
         if st.session_state.roadmap_open[k1]:
             st.markdown("#### 상반기")
-            ids = r.get("h1") or []
-            if not ids:
+            items = r.get("h1") or []
+            if not items:
                 st.caption("배치된 활동이 없어요.")
             else:
-                for aid in ids:
-                    a = act_map.get(aid)
+                for key in items:
+                    a = _resolve_activity(act_map, title_map, key)
                     if not a:
                         continue
-                    st.markdown(
-                        f"- {badge(a.get('priority','권장'))} <b>{a.get('title','')}</b>",
-                        unsafe_allow_html=True,
-                    )
+                    st.markdown(f"- {badge(a.get('priority','권장'))} <b>{a.get('title','')}</b>", unsafe_allow_html=True)
 
         # 하반기
         if st.session_state.roadmap_open[k2]:
             st.markdown("#### 하반기")
-            ids = r.get("h2") or []
-            if not ids:
+            items = r.get("h2") or []
+            if not items:
                 st.caption("배치된 활동이 없어요.")
             else:
-                for aid in ids:
-                    a = act_map.get(aid)
+                for key in items:
+                    a = _resolve_activity(act_map, title_map, key)
                     if not a:
                         continue
-                    st.markdown(
-                        f"- {badge(a.get('priority','권장'))} <b>{a.get('title','')}</b>",
-                        unsafe_allow_html=True,
-                    )
+                    st.markdown(f"- {badge(a.get('priority','권장'))} <b>{a.get('title','')}</b>", unsafe_allow_html=True)
 
         st.markdown("</div>", unsafe_allow_html=True)
-
 
 
 def _build_design_chat_appendix(career_options, recommended_direction, draft_activities) -> str:
     parts = []
 
-    # 옵션 요약
     if isinstance(career_options, list) and career_options:
         parts.append("\n\n---\n**초안(진로 옵션)**")
         for i, opt in enumerate(career_options[:3], start=1):
@@ -413,19 +478,16 @@ def _build_design_chat_appendix(career_options, recommended_direction, draft_act
             out = opt.get("outlook", "")
             parts.append(f"{i}. **{title}**\n- 적합: {fit}\n- 리스크: {risk}\n- 전망: {out}")
 
-    # 추천 방향
     if recommended_direction:
         parts.append(f"\n**현재 가장 유력한 방향(초안):** {recommended_direction}")
 
-    # 활동(상위 일부만)
     if isinstance(draft_activities, list) and draft_activities:
         parts.append("\n---\n**초안(필요활동 TOP 6)**")
         for a in draft_activities[:6]:
             if not isinstance(a, dict):
                 continue
-            parts.append(f"- {badge(a.get('priority','권장'))} **{a.get('title','')}**",)
+            parts.append(f"- {badge(a.get('priority','권장'))} **{a.get('title','')}**")
 
-    # markdown에 배지 HTML이 들어가므로 unsafe_html은 렌더 단계에서 적용
     return "\n".join(parts)
 
 # ======================
@@ -457,10 +519,12 @@ def main():
     with tab_chat:
         for m in st.session_state.messages:
             with st.chat_message(m["role"]):
-                # DESIGN 단계에서 배지 HTML이 포함될 수 있어 unsafe 허용
                 st.markdown(m["content"], unsafe_allow_html=True)
 
         user_input = st.chat_input("자유롭게 이야기해 주세요")
+
+        if user_input and not api_key:
+            st.warning("사이드바에 OpenAI API Key를 먼저 입력해줘!")
 
         if user_input and api_key:
             client = OpenAI(api_key=api_key)
@@ -483,7 +547,11 @@ def main():
             # 모델 호출 + 스피너
             with st.chat_message("assistant"):
                 with st.spinner("생각중이에요 🤔"):
-                    data = llm_call(client, prompt, st.session_state.messages)
+                    try:
+                        data = llm_call(client, prompt, st.session_state.messages)
+                    except Exception as e:
+                        st.error(f"모델 응답 처리 오류: {e}")
+                        return
 
                     msg = (data.get("assistant_message") or "").strip()
 
@@ -491,12 +559,12 @@ def main():
                     if st.session_state.stage == "DESIGN":
                         career_options = data.get("career_options", [])
                         recommended_direction = data.get("recommended_direction", "")
-                        draft_activities = data.get("draft_activities", [])
+                        draft_activities = normalize_activities(data.get("draft_activities", []))
                         appendix = _build_design_chat_appendix(career_options, recommended_direction, draft_activities)
                         if appendix:
                             msg = msg + appendix
 
-                    # FINAL 단계: 생성 완료 안내를 채팅에서도 명확히
+                    # FINAL 단계: 생성 완료 안내
                     if st.session_state.stage == "FINAL":
                         msg = msg + "\n\n---\n✅ **필요활동**과 **로드맵**을 업데이트했어요. 위 탭에서 바로 확인할 수 있어요."
 
@@ -509,29 +577,23 @@ def main():
             if st.session_state.stage == "DISCOVERY":
                 st.session_state.discovery = data.get("discovery_summary", st.session_state.discovery)
 
-                # 1) 모델이 전환 신호를 줬거나
-                # 2) 유저 발화가 일정 횟수 이상이면 (길어지지 않게) 자동 전환
                 if data.get("next_action") == "READY_FOR_DESIGN" or st.session_state.discovery_turns >= MAX_DISCOVERY_TURNS:
                     st.session_state.stage = "DESIGN"
 
             elif st.session_state.stage == "DESIGN":
                 st.session_state.career_options = data.get("career_options", st.session_state.career_options)
                 st.session_state.recommended_direction = data.get("recommended_direction", st.session_state.recommended_direction)
-                st.session_state.activities = data.get("draft_activities", st.session_state.activities)
-                # 모델이 준비 완료라고 하면 FINAL로
+                st.session_state.activities = normalize_activities(data.get("draft_activities", st.session_state.activities))
                 if data.get("next_action") == "READY_FOR_FINAL":
                     st.session_state.stage = "FINAL"
 
             elif st.session_state.stage == "FINAL":
                 st.session_state.career_plan = data.get("career_plan", st.session_state.career_plan)
-                st.session_state.activities = data.get("activities", st.session_state.activities)
-                st.session_state.roadmap = data.get("roadmap", st.session_state.roadmap)
+                st.session_state.activities = normalize_activities(data.get("activities", st.session_state.activities))
+                st.session_state.roadmap = normalize_roadmap(data.get("roadmap", st.session_state.roadmap))
 
             save_state()
             st.rerun()
-
-        elif user_input and not api_key:
-            st.warning("사이드바에 OpenAI API Key를 먼저 입력해줘!")
 
     # ------------------
     # Activities Tab

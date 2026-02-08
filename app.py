@@ -666,8 +666,32 @@ def main():
                 st.session_state.career_options = data.get("career_options", st.session_state.career_options)
                 st.session_state.recommended_direction = data.get("recommended_direction", st.session_state.recommended_direction)
                 st.session_state.activities = normalize_activities(data.get("draft_activities", st.session_state.activities))
-                if data.get("next_action") == "READY_FOR_FINAL":
+
+                # ✅ DESIGN → FINAL 자동 전환(모델 next_action이 불안정할 때를 대비)
+                confirm_re = r"(확정|최종|결정|이대로|진행|좋아요|좋아|오케이|OK|go)"
+                user_confirmed = bool(re.search(confirm_re, user_input, flags=re.IGNORECASE))
+                model_ready = data.get("next_action") == "READY_FOR_FINAL"
+                enough_draft = bool(st.session_state.recommended_direction) and len(st.session_state.activities) >= 6
+
+                if model_ready or user_confirmed or enough_draft:
                     st.session_state.stage = "FINAL"
+
+                    # 같은 턴에서 FINAL 결과까지 바로 생성(사용자 추가 입력 없이)
+                    try:
+                        final_data = llm_call(client, FINAL_PROMPT, st.session_state.messages)
+                        final_msg = (final_data.get("assistant_message") or "").strip()
+                        final_msg = final_msg + "
+
+---
+✅ **필요활동**과 **로드맵**을 업데이트했어요. 위 탭에서 바로 확인할 수 있어요."
+                        st.session_state.messages.append({"role": "assistant", "content": final_msg})
+
+                        st.session_state.career_plan = final_data.get("career_plan", st.session_state.career_plan)
+                        st.session_state.activities = normalize_activities(final_data.get("activities", st.session_state.activities))
+                        st.session_state.roadmap = normalize_roadmap(final_data.get("roadmap", st.session_state.roadmap))
+                    except Exception:
+                        # FINAL 생성 실패 시에도 단계는 FINAL로 둔 채 다음 입력에서 재시도 가능
+                        pass
 
             elif st.session_state.stage == "FINAL":
                 st.session_state.career_plan = data.get("career_plan", st.session_state.career_plan)

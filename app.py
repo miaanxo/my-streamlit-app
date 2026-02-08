@@ -680,8 +680,7 @@ def main():
                     try:
                         final_data = llm_call(client, FINAL_PROMPT, st.session_state.messages)
                         final_msg = (final_data.get("assistant_message") or "").strip()
-                        final_msg = final_msg + "
-
+                        final_msg = final_msg + "\n\n---\n✅ **필요활동**과 **로드맵**을 업데이트했어요. 위 탭에서 바로 확인할 수 있어요."\n
 ---
 ✅ **필요활동**과 **로드맵**을 업데이트했어요. 위 탭에서 바로 확인할 수 있어요."
                         st.session_state.messages.append({"role": "assistant", "content": final_msg})

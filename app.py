@@ -31,9 +31,8 @@ DISCOVERY_PROMPT = """
   1) 지금까지의 대화를 바탕으로 한 ‘가설’ 1~2개 제시
      (예: “지금까지 보면 A 성향이 강해 보여요”)
   2) 그 가설을 확인하거나 깨기 위한 질문 1개
-  3) 사용자가 쉽게 답할 수 있는 선택형 질문 1개
-     (3~5개 보기 중 고르게 하거나 ‘이 중 가장 가까운 것’)
-
+  3) 사용자가 쉽게 답할 수 있는 질문 1개
+    
 - 요약은 매번 하지 않는다.
   단, 새로운 정보가 충분히 쌓였을 때만 1~2줄로 짧게 정리한다.
 
@@ -143,10 +142,14 @@ def load_state():
 # ======================
 
 def extract_json(text: str) -> dict:
+    """모델 출력이 JSON이 아닐 때도 앱이 죽지 않도록 최대한 복구."""
     text = (text or "").strip()
+    if not text:
+        raise ValueError("Empty model output")
     try:
         return json.loads(text)
     except Exception:
+        # 응답 중 JSON 블록만 뽑아내기
         m = re.search(r"\{.*\}", text, flags=re.DOTALL)
         if not m:
             raise
@@ -332,7 +335,12 @@ def main():
             if st.session_state.stage == "DISCOVERY": st.session_state.discovery_turns += 1
             prompt = DISCOVERY_PROMPT if st.session_state.stage=="DISCOVERY" else DESIGN_PROMPT if st.session_state.stage=="DESIGN" else FINAL_PROMPT
             with st.chat_message("assistant"), st.spinner("생각중..."):
-                data = llm_call(client, prompt, st.session_state.messages)
+                try:
+                    data = llm_call(client, prompt, st.session_state.messages)
+                except Exception:
+                    # JSON 파싱/모델 출력 문제로 앱이 죽지 않게 폴백
+                    data = {"assistant_message": "응답을 JSON으로 해석하지 못했어요. 같은 내용을 한 번만 더 말해줘!"}
+
                 msg = (data.get('assistant_message') or '').strip()
 
                 # ✅ 결과 내기 전(=DESIGN)에도 제안/초안을 채팅창에 반드시 표시

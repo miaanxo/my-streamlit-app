@@ -257,10 +257,8 @@ def main():
 
                 # FINAL 단계 메시지엔 업데이트 안내를 덧붙임
                 if st.session_state.stage == "FINAL":
-                    msg += "
+                   msg += "\n\n---\n[완료] 필요활동과 로드맵을 업데이트했어요."
 
----
-[완료] 필요활동과 로드맵을 업데이트했어요."
 
                 st.markdown(msg, unsafe_allow_html=True)
 

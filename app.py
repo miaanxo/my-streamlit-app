@@ -169,8 +169,8 @@ def extract_json(text: str) -> dict:
     text = (text or "").strip()
     try:
             return ""
-".join(parts)
-".join(parts).join(parts)
+
+.join(parts)
 
 
 # ======================

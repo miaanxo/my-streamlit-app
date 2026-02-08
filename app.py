@@ -167,42 +167,99 @@ def render_activities_table():
         st.markdown("---")
 
 
+def _resolve_activity_any(acts_by_id: dict, acts_by_title: dict, key):
+    """roadmap.h1/h2가 id 또는 title로 들어와도 매칭"""
+    if key in acts_by_id:
+        return acts_by_id[key]
+    if isinstance(key, str):
+        k = key.strip()
+        if k in acts_by_title:
+            return acts_by_title[k]
+    return None
+
+
 def render_roadmap():
     st.subheader("로드맵")
     roadmap = normalize_roadmap(st.session_state.get("roadmap", []))
     if not roadmap:
-        st.info("아직 로드맵이 없습니다.")
+        st.info("아직 로드맵이 없습니다. 채팅에서 FINAL 결과가 생성되면 표시돼요.")
         return
+
+    acts_list = normalize_activities(st.session_state.get("activities", []))
+    acts_by_id = {a.get("id"): a for a in acts_list if a.get("id")}
+    acts_by_title = {(a.get("title") or "").strip(): a for a in acts_list if (a.get("title") or "").strip()}
+
     years = sorted({r.get("year") for r in roadmap if isinstance(r.get("year"), int)})
     if years:
         st.markdown("**타임라인**")
         st.markdown(" | ".join(map(str, years)))
-    acts = {a['id']:a for a in normalize_activities(st.session_state.get("activities", []))}
-    for r in roadmap:
-        st.markdown(f"### {r.get('year')}년")
-        c1,c2 = st.columns(2)
-        with c1:
-            st.markdown("#### 상반기")
-            for k in r.get('h1',[]):
-                if k in acts: st.markdown(f"- {badge(acts[k]['priority'])} {acts[k]['title']}", unsafe_allow_html=True)
-        with c2:
-            st.markdown("#### 하반기")
-            for k in r.get('h2',[]):
-                if k in acts: st.markdown(f"- {badge(acts[k]['priority'])} {acts[k]['title']}", unsafe_allow_html=True)
+
+    for r in sorted(roadmap, key=lambda x: x.get("year", 0)):
+        year = r.get("year")
+        if not isinstance(year, int):
+            continue
+        st.markdown(f"### {year}년")
+        c1, c2 = st.columns(2)
+
+        def _render_half(col, label, items):
+            with col:
+                st.markdown(f"#### {label}")
+                shown = 0
+                for k in items or []:
+                    a = _resolve_activity_any(acts_by_id, acts_by_title, k)
+                    if not a:
+                        continue
+                    shown += 1
+                    st.markdown(
+                        f"- {badge((a.get('priority') or '권장'))} {a.get('title','')}",
+                        unsafe_allow_html=True,
+                    )
+                if shown == 0:
+                    st.caption("배치된 활동이 없어요.")
+
+        _render_half(c1, "상반기", r.get("h1", []))
+        _render_half(c2, "하반기", r.get("h2", []))
+
 
 
 def build_design_appendix(career_options, recommended_direction, draft_activities) -> str:
     parts = []
     if career_options:
-        parts.append("\n\n---\n**초안(진로 옵션)**")
+        parts.append("
+
+---
+**초안(진로 옵션)**")
         for i,o in enumerate(career_options[:3],1):
             parts.append(f"{i}. **{o.get('title','')}** - {o.get('fit_reason','')}")
     if recommended_direction:
-        parts.append(f"\n**유력 방향:** {recommended_direction}")
+        parts.append(f"
+**유력 방향:** {recommended_direction}")
     if draft_activities:
-        parts.append("\n---\n**초안(필요활동)**")
+        parts.append("
+---
+**초안(필요활동)**")
         for a in draft_activities[:6]: parts.append(f"- {a.get('title','')}")
-    return "\n".join(parts)
+    return "
+".join(parts)
+(career_options, recommended_direction, draft_activities) -> str:
+    parts = []
+    if career_options:
+        parts.append("
+
+---
+**초안(진로 옵션)**")
+        for i,o in enumerate(career_options[:3],1):
+            parts.append(f"{i}. **{o.get('title','')}** - {o.get('fit_reason','')}")
+    if recommended_direction:
+        parts.append(f"
+**유력 방향:** {recommended_direction}")
+    if draft_activities:
+        parts.append("
+---
+**초안(필요활동)**")
+        for a in draft_activities[:6]: parts.append(f"- {a.get('title','')}")
+    return "
+".join(parts)
 
 # ======================
 # Main
@@ -236,17 +293,46 @@ def main():
                 data = llm_call(client, prompt, st.session_state.messages)
                 msg = (data.get('assistant_message') or '').strip()
                 if st.session_state.stage=="DESIGN": msg += build_design_appendix(data.get('career_options',[]), data.get('recommended_direction',''), normalize_activities(data.get('draft_activities',[])))
-                if st.session_state.stage=="FINAL": msg += "\n\n---\n[완료] 필요활동과 로드맵을 업데이트했어요."
+                if st.session_state.stage=="FINAL": msg += "
+
+---
+[완료] 필요활동과 로드맵을 업데이트했어요."
                 st.markdown(msg, unsafe_allow_html=True)
             st.session_state.messages.append({"role":"assistant","content":msg})
             if st.session_state.stage=="DISCOVERY":
                 if data.get('next_action')=="READY_FOR_DESIGN" or st.session_state.discovery_turns>=MAX_DISCOVERY_TURNS:
                     st.session_state.stage="DESIGN"
             elif st.session_state.stage=="DESIGN":
-                st.session_state.career_options=data.get('career_options',[])
-                st.session_state.recommended_direction=data.get('recommended_direction','')
-                st.session_state.activities=normalize_activities(data.get('draft_activities',[]))
-                if data.get('next_action')=="READY_FOR_FINAL": st.session_state.stage="FINAL"
+                st.session_state.career_options = data.get('career_options', [])
+                st.session_state.recommended_direction = data.get('recommended_direction', '')
+                st.session_state.activities = normalize_activities(data.get('draft_activities', []))
+
+                # ✅ DESIGN → FINAL 자동 전환(모델 next_action이 애매할 때도 넘어가게)
+                st.session_state.setdefault('design_turns', 0)
+                st.session_state.design_turns += 1
+
+                confirm_re = r"(확정|최종|결정|이대로|진행|좋아요|좋아|오케이|ok|OK|go)"
+                user_confirmed = bool(re.search(confirm_re, user_input or "", flags=re.IGNORECASE))
+                model_ready = data.get('next_action') == "READY_FOR_FINAL"
+                enough_draft = bool(st.session_state.recommended_direction) and len(st.session_state.activities) >= 6
+                timeout = st.session_state.design_turns >= 3
+
+                if model_ready or user_confirmed or enough_draft or timeout:
+                    st.session_state.stage = "FINAL"
+                    # FINAL을 즉시 생성해서 로드맵/활동이 바로 보이게
+                    try:
+                        final_data = llm_call(client, FINAL_PROMPT, st.session_state.messages)
+                        final_msg = (final_data.get('assistant_message') or '').strip()
+                        final_msg += "
+
+---
+[완료] 필요활동과 로드맵을 업데이트했어요."
+                        st.session_state.messages.append({"role": "assistant", "content": final_msg})
+                        st.session_state.career_plan = final_data.get('career_plan', {})
+                        st.session_state.activities = normalize_activities(final_data.get('activities', []))
+                        st.session_state.roadmap = normalize_roadmap(final_data.get('roadmap', []))
+                    except Exception:
+                        pass
             elif st.session_state.stage=="FINAL":
                 st.session_state.career_plan=data.get('career_plan',{})
                 st.session_state.activities=normalize_activities(data.get('activities',[]))
